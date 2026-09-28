@@ -1,14 +1,15 @@
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
-from .models import Course, Module, Lesson, Enrollment, LessonProgress
+from .models import Course, Module, Lesson, Enrollment, LessonProgress, Quiz, Question, QuizSubmission, Comment
 
 User = get_user_model()
 
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'password', 'role')
+        fields = ('id', 'username', 'email', 'password', 'role', 'is_active')
         extra_kwargs = {'password': {'write_only': True}}
+        read_only_fields = ('is_active',)
 
     def create(self, validated_data):
         user = User.objects.create_user(
@@ -31,16 +32,29 @@ class ModuleSerializer(serializers.ModelSerializer):
         model = Module
         fields = ('id', 'course', 'title', 'order', 'lessons')
 
+class QuestionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Question
+        fields = ('id', 'content', 'option_a', 'option_b', 'option_c', 'option_d')
+
+class QuizSerializer(serializers.ModelSerializer):
+    questions = QuestionSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Quiz
+        fields = ('id', 'course', 'title', 'time_limit_minutes', 'questions')
+
 class CourseSerializer(serializers.ModelSerializer):
     instructor_username = serializers.ReadOnlyField(source='instructor.username')
     modules = ModuleSerializer(many=True, read_only=True)
+    quizzes = QuizSerializer(many=True, read_only=True)
 
     class Meta:
         model = Course
         fields = (
             'id', 'title', 'description', 'requirements', 
             'instructor', 'instructor_username', 'is_published', 
-            'created_at', 'modules'
+            'created_at', 'modules', 'quizzes'
         )
         read_only_fields = ('instructor',)
 
@@ -59,6 +73,13 @@ class LessonProgressSerializer(serializers.ModelSerializer):
         read_only_fields = ('student',)
 
 
+class CommentSerializer(serializers.ModelSerializer):
+    username = serializers.ReadOnlyField(source='user.username')
+
+    class Meta:
+        model = Comment
+        fields = ('id', 'lesson', 'user', 'username', 'content', 'created_at')
+        read_only_fields = ('user', 'lesson')
 
 
 

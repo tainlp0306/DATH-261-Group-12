@@ -5,9 +5,14 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
-from .serializers import UserSerializer, CourseSerializer, ModuleSerializer, LessonSerializer, EnrollmentSerializer, LessonProgressSerializer
-from .permissions import IsAdmin, IsInstructor
-from .models import Course, Module, Lesson, Enrollment, LessonProgress
+from django.db.models import Count, Q
+from .serializers import (
+    UserSerializer, CourseSerializer, ModuleSerializer, 
+    LessonSerializer, EnrollmentSerializer, LessonProgressSerializer,
+    CommentSerializer, QuizSerializer, QuestionSerializer
+)
+from .permissions import IsAdmin, IsInstructor, IsInstructorOrAdmin
+from .models import Course, Module, Lesson, Enrollment, LessonProgress, User, Quiz, Question, QuizSubmission, Comment
 
 User = get_user_model()
 
@@ -75,7 +80,7 @@ class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_permissions(self):
         if self.request.method in ['PUT', 'PATCH', 'DELETE']:
-            return [IsInstructor()]
+            return [IsInstructorOrAdmin()]
         return []
 
 class ModuleCreateView(generics.CreateAPIView):
@@ -128,3 +133,174 @@ class LessonProgressUpdateView(APIView):
             "is_completed": progress.is_completed,
             "last_position": progress.last_position
         })
+
+class AdminUserListView(generics.ListAPIView):
+    serializer_class = UserSerializer
+    permission_classes = [IsAdmin]
+
+    def get_queryset(self):
+        role = self.request.query_params.get('role')
+        queryset = User.objects.all()
+        if role:
+            queryset = queryset.filter(role=role)
+        return queryset
+
+class AdminUserDeleteView(generics.DestroyAPIView):
+    queryset = User.objects.all()
+    permission_classes = [IsAdmin]
+    lookup_url_kwarg = 'user_id'
+
+    def delete(self, request, *args, **kwargs):
+        user = self.get_object()
+        if user.pk == request.user.pk:
+            return Response(
+                {"error": "Không thể tự xóa tài khoản quản trị đang đăng nhập"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        user.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+class AdminCourseListView(generics.ListAPIView):
+    queryset = Course.objects.all()
+    serializer_class = CourseSerializer
+    permission_classes = [IsAdmin]
+
+
+class ModuleDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Module.objects.all()
+    serializer_class = ModuleSerializer
+    permission_classes = [IsInstructor]
+
+class LessonDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Lesson.objects.all()
+    serializer_class = LessonSerializer
+    permission_classes = [IsInstructor]
+
+
+class CourseStudentsProgressView(generics.GenericAPIView):
+    permission_classes = [IsInstructor]
+
+    def get(self, request, course_id):
+        try:
+            course = Course.objects.get(id=course_id)
+        except Course.DoesNotExist:
+            return Response({"error": "Khóa học không tồn tại"}, status=status.HTTP_404_NOT_FOUND)
+
+        enrollments = Enrollment.objects.filter(course=course).select_related('student')
+        total_lessons = Lesson.objects.filter(module__course=course).count()
+
+        result = []
+        for enroll in enrollments:
+            completed_count = LessonProgress.objects.filter(
+                student=enroll.student, 
+                lesson__module__course=course, 
+                is_completed=True
+            ).count()
+            
+            progress_percent = int((completed_count / total_lessons) * 100) if total_lessons > 0 else 0
+            
+            result.append({
+                "student_id": enroll.student.id,
+                "username": enroll.student.username,
+                "email": enroll.student.email,
+                "enrolled_at": enroll.enrolled_at,
+                "completed_lessons": completed_count,
+                "total_lessons": total_lessons,
+                "progress_percent": progress_percent
+            })
+
+        return Response(result, status=status.HTTP_200_OK)
+
+
+class StudentCourseProgressView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, course_id):
+        progresses = LessonProgress.objects.filter(
+            student=request.user,
+            lesson__module__course_id=course_id
+        ).order_by('-updated_at').values('lesson_id', 'is_completed', 'last_position')
+
+        return Response(list(progresses), status=status.HTTP_200_OK)
+
+
+class QuizDetailView(generics.RetrieveAPIView):
+    queryset = Quiz.objects.all()
+    serializer_class = QuizSerializer
+    permission_classes = [IsAuthenticated]
+
+
+class CourseQuizListView(generics.ListCreateAPIView):
+    serializer_class = QuizSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        course_id = self.kwargs['course_id']
+        return Quiz.objects.filter(course_id=course_id)
+
+    def perform_create(self, serializer):
+        course_id = self.kwargs['course_id']
+        serializer.save(course_id=course_id)
+
+
+class SubmitQuizView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, quiz_id):
+        try:
+            quiz = Quiz.objects.get(id=quiz_id)
+        except Quiz.DoesNotExist:
+            return Response({"error": "Bài kiểm tra không tồn tại"}, status=status.HTTP_404_NOT_FOUND)
+
+        answers = request.data.get('answers', {}) # Format: {"question_id": "A", ...}
+        questions = quiz.questions.all()
+        
+        if not questions.exists():
+            return Response({"error": "Bài kiểm tra chưa có câu hỏi"}, status=status.HTTP_400_BAD_REQUEST)
+
+        correct_count = 0
+        for q in questions:
+            user_ans = answers.get(str(q.id))
+            if user_ans and user_ans.upper() == q.correct_option.upper():
+                correct_count += 1
+
+        score = round((correct_count / questions.count()) * 10, 2)
+        submission = QuizSubmission.objects.create(student=request.user, quiz=quiz, score=score)
+
+        return Response({
+            "message": "Nộp bài thành công!",
+            "score": score,
+            "correct_count": correct_count,
+            "total_questions": questions.count()
+        }, status=status.HTTP_201_CREATED)
+
+
+class LessonCommentView(generics.ListCreateAPIView):
+    serializer_class = CommentSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        lesson_id = self.kwargs['lesson_id']
+        return Comment.objects.filter(lesson_id=lesson_id).order_by('-created_at')
+
+    def perform_create(self, serializer):
+        lesson_id = self.kwargs['lesson_id']
+        serializer.save(user=self.request.user, lesson_id=lesson_id)
+
+
+class AdminDashboardStatsView(APIView):
+    permission_classes = [IsAdmin]
+
+    def get(self, request):
+        total_students = User.objects.filter(role='learner').count()
+        total_instructors = User.objects.filter(role='instructor').count()
+        total_courses = Course.objects.count()
+        total_enrollments = Enrollment.objects.count()
+
+        return Response({
+            "total_students": total_students,
+            "total_instructors": total_instructors,
+            "total_courses": total_courses,
+            "total_enrollments": total_enrollments
+        })
+
