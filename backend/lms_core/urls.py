@@ -3,13 +3,21 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .views import (
     RegisterView, UserProfileView, LogoutView, 
     ChangePasswordView, ToggleAccountStatusView,
-    CourseListCreateView, CourseDetailView, ModuleCreateView, LessonCreaterView,
+    CourseListCreateView, CourseDetailView, InstructorCourseOptionsView,
+    ModuleCreateView, LessonCreaterView,
     EnrollmentListCreateView, LessonProgressUpdateView,
     AdminUserListView, AdminUserDeleteView, AdminCourseListView,
     ModuleDetailView, LessonDetailView,
     CourseStudentsProgressView, StudentCourseProgressView,
     SubmitQuizView, LessonCommentView, AdminDashboardStatsView,
-    QuizDetailView, CourseQuizListView
+    QuizDetailView, CourseQuizListView, PasswordResetView,
+    PasswordResetConfirmView, GoogleLoginView,
+    EnrollmentDetailView, EnrollmentLeaveView, CourseTestListCreateView, TestSubmissionListCreateView,
+    GradeSubmissionView, NotificationListView, NotificationConfirmView,
+    CourseAnnouncementView, ReportCreateView,
+    AdminReportListView, AdminReportDetailView, AdminLogListView,
+    OTPRequestView, PasswordOTPConfirmView,
+    RegistrationOTPRequestView, RegistrationOTPConfirmView,
 )
 
 urlpatterns = [
@@ -17,6 +25,9 @@ urlpatterns = [
     path('login/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('logout/', LogoutView.as_view(), name='logout'),
+    path('password-reset/', PasswordResetView.as_view(), name='password_reset'),
+    path('password-reset-confirm/', PasswordResetConfirmView.as_view(), name='password_reset_confirm'),
+    path('google-login/', GoogleLoginView.as_view(), name='google_login'),
     
     path('profile/', UserProfileView.as_view(), name='profile'),
     path('password/change/', ChangePasswordView.as_view(), name='change_password'),
@@ -26,10 +37,17 @@ urlpatterns = [
 
 
     path('courses/', CourseListCreateView.as_view(), name='course_list_create'),
+    path('instructor/courses/options/', InstructorCourseOptionsView.as_view(), name='instructor_course_options'),
     path('courses/<int:pk>/', CourseDetailView.as_view(), name='course_detail'),
     path('modules/', ModuleCreateView.as_view(), name='module_create'),
     path('lessons/', LessonCreaterView.as_view(), name='lesson_create'),
     path('enrollments/', EnrollmentListCreateView.as_view(), name='enrollment_list_create'),
+    path('request-otp/', OTPRequestView.as_view(), name='request_otp'),
+    path('confirm-otp/', PasswordOTPConfirmView.as_view(), name='confirm_otp'),
+    path('request-registration-otp/', RegistrationOTPRequestView.as_view(), name='request_registration_otp'),
+    path('confirm-registration-otp/', RegistrationOTPConfirmView.as_view(), name='confirm_registration_otp'),
+    path('enrollments/<int:pk>/', EnrollmentDetailView.as_view(), name='enrollment_detail'),
+    path('enrollments/<int:course_id>/leave/', EnrollmentLeaveView.as_view(), name='enrollment_leave'),
     path('lessons/<int:lesson_id>/progress/', LessonProgressUpdateView.as_view(), name='lesson_progress_update'),   
 
     path('admin/users/', AdminUserListView.as_view(), name='admin_user_list'),
@@ -45,4 +63,14 @@ urlpatterns = [
     path('quizzes/<int:quiz_id>/submit/', SubmitQuizView.as_view(), name='submit_quiz'),
     path('lessons/<int:lesson_id>/comments/', LessonCommentView.as_view(), name='lesson_comments'),    
     path('admin/dashboard-stats/', AdminDashboardStatsView.as_view(), name='admin_dashboard_stats'),
+    path('courses/<int:course_id>/tests/', CourseTestListCreateView.as_view(), name='course_tests'),
+    path('tests/<int:test_id>/submissions/', TestSubmissionListCreateView.as_view(), name='test_submissions'),
+    path('submissions/<int:submission_id>/grade/', GradeSubmissionView.as_view(), name='grade_submission'),
+    path('notifications/', NotificationListView.as_view(), name='notifications'),
+    path('notifications/<int:notification_id>/confirm/', NotificationConfirmView.as_view(), name='notification_confirm'),
+    path('courses/<int:course_id>/announcements/', CourseAnnouncementView.as_view(), name='course_announcement'),
+    path('reports/', ReportCreateView.as_view(), name='reports'),
+    path('admin/reports/', AdminReportListView.as_view(), name='admin_reports'),
+    path('admin/reports/<int:pk>/', AdminReportDetailView.as_view(), name='admin_report_detail'),
+    path('admin/logs/', AdminLogListView.as_view(), name='admin_logs'),
 ]

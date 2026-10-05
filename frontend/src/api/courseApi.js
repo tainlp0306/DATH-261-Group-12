@@ -2,8 +2,9 @@ import api from './axios';
 
 export const courseApi = {
   // GET /courses/ - List all published courses (supports ?search= keyword)
-  getCourses: async (search = '') => {
-    const params = search ? { search } : {};
+  getCourses: async (search = '', page = 1, ordering = '-created_at') => {
+    const params = { page, ordering };
+    if (search) params.search = search;
     const response = await api.get('courses/', { params });
     return response.data;
   },
@@ -11,6 +12,21 @@ export const courseApi = {
   // GET /courses/:id/ - Retrieve course detail including modules and lessons
   getCourseDetail: async (id) => {
     const response = await api.get(`courses/${id}/`);
+    return response.data;
+  },
+
+  getLessonDetail: async (lessonId) => {
+    const response = await api.get(`lessons/${lessonId}/`);
+    return response.data;
+  },
+
+  getPrerequisiteOptions: async () => {
+    const response = await api.get('instructor/courses/options/');
+    return response.data;
+  },
+
+  sendCourseAnnouncement: async (courseId, announcement) => {
+    const response = await api.post(`courses/${courseId}/announcements/`, announcement);
     return response.data;
   },
 
@@ -28,7 +44,9 @@ export const courseApi = {
 
   // POST /lessons/ - Create a new lesson inside a module
   createLesson: async (lessonData) => {
-    const response = await api.post('lessons/', lessonData);
+    const response = await api.post('lessons/', toLessonFormData(lessonData), {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return response.data;
   },
 
@@ -41,6 +59,45 @@ export const courseApi = {
   // GET /enrollments/ - Get current user enrollments
   getMyEnrollments: async () => {
     const response = await api.get('enrollments/');
+    return response.data;
+  },
+
+  withdrawEnrollment: async (enrollmentId) => {
+    const response = await api.delete(`enrollments/${enrollmentId}/`);
+    return response.data;
+  },
+
+  leaveCourse: async (courseId) => {
+    const response = await api.delete(`enrollments/${courseId}/leave/`);
+    return response.data;
+  },
+
+  getCourseTests: async (courseId) => {
+    const response = await api.get(`courses/${courseId}/tests/`);
+    return response.data;
+  },
+
+  createCourseTest: async (courseId, testData) => {
+    const response = await api.post(`courses/${courseId}/tests/`, testData);
+    return response.data;
+  },
+
+  getTestSubmissions: async (testId) => {
+    const response = await api.get(`tests/${testId}/submissions/`);
+    return response.data;
+  },
+
+  submitTestFile: async (testId, file) => {
+    const formData = new FormData();
+    formData.append('submitted_file', file);
+    const response = await api.post(`tests/${testId}/submissions/`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  gradeSubmission: async (submissionId, grade) => {
+    const response = await api.patch(`submissions/${submissionId}/grade/`, grade);
     return response.data;
   },
 
@@ -88,7 +145,9 @@ export const courseApi = {
 
   // PUT /lessons/:id/ - Update lesson
   updateLesson: async (id, lessonData) => {
-    const response = await api.put(`lessons/${id}/`, lessonData);
+    const response = await api.put(`lessons/${id}/`, toLessonFormData(lessonData), {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return response.data;
   },
 
@@ -101,7 +160,7 @@ export const courseApi = {
   // GET /lessons/:lesson_id/comments/ - Get comments of a lesson
   getLessonComments: async (lessonId) => {
     const response = await api.get(`lessons/${lessonId}/comments/`);
-    return response.data;
+    return response.data.results || response.data;
   },
 
   // POST /lessons/:lesson_id/comments/ - Post a new comment
@@ -113,7 +172,7 @@ export const courseApi = {
   // GET /courses/:course_id/quizzes/ - Get quizzes of a course
   getCourseQuizzes: async (courseId) => {
     const response = await api.get(`courses/${courseId}/quizzes/`);
-    return response.data;
+    return response.data.results || response.data;
   },
 
   // GET /quizzes/:id/ - Get quiz details
@@ -128,4 +187,14 @@ export const courseApi = {
     return response.data;
   },
 };
+
+function toLessonFormData(lessonData) {
+  const formData = new FormData();
+  Object.entries(lessonData).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      formData.append(key, value);
+    }
+  });
+  return formData;
+}
 

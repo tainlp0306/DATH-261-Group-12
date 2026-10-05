@@ -18,8 +18,8 @@ class User(AbstractUser):
 class Course(models.Model):
     title = models.CharField(max_length=255)
     description = models.TextField()
-    requirements = models.TextField(blank=True, null=True)
     instructor = models.ForeignKey(User, on_delete=models.CASCADE, related_name='courses')
+    prerequisites = models.ManyToManyField('self', blank=True, symmetrical=False, related_name='required_by')
     is_published = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     
@@ -35,13 +35,14 @@ class Module(models.Model):
         return f"{self.course.title} - {self.title}"
 
 class Lesson(models.Model):
-    TYPE_CHOICES = [('video', 'Video'), ('text', 'Văn bản'), ('slide', 'Slide')]
+    TYPE_CHOICES = [('text', 'Văn bản'), ('slide', 'Slide đính kèm'), ('video', 'Video Link')]
     
     module = models.ForeignKey(Module, on_delete=models.CASCADE, related_name='lessons')
     title = models.CharField(max_length=255)
     lesson_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='text')
     content = models.TextField(blank=True, null=True)
     media_url = models.URLField(blank=True, null=True)
+    attached_file = models.FileField(upload_to='lessons/files/', blank=True, null=True)
     order = models.IntegerField(default=0)
     
     def __str__(self):
@@ -51,15 +52,14 @@ class Enrollment(models.Model):
     student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='enrollments')
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='enrollments')
     enrolled_at = models.DateTimeField(auto_now_add=True)
-    
-    class Meta:
-        unique_together = ('student', 'course')
+    is_passed = models.BooleanField(default=False)
 
 class LessonProgress(models.Model):
     student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='progress')
     lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE)
     is_completed = models.BooleanField(default=False)
     last_position = models.IntegerField(default=0)
+    last_page = models.PositiveIntegerField(default=1)
     updated_at = models.DateTimeField(auto_now=True)
 
 class Test(models.Model):
@@ -78,6 +78,8 @@ class TestSubmission(models.Model):
     test = models.ForeignKey(Test, on_delete=models.CASCADE)
     score = models.FloatField(blank=True, null=True)
     submitted_file_url = models.URLField(blank=True, null=True)
+    submitted_file = models.FileField(upload_to='submissions/', blank=True, null=True)
+    feedback = models.TextField(blank=True)
     submitted_at = models.DateTimeField(auto_now_add=True)
 
 class Comment(models.Model):
@@ -125,3 +127,41 @@ class QuizSubmission(models.Model):
     quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE)
     score = models.FloatField()
     submitted_at = models.DateTimeField(auto_now_add=True)
+
+
+class Notification(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
+    title = models.CharField(max_length=255, default='Thông báo')
+    message = models.CharField(max_length=255)
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='notifications', null=True, blank=True)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+class AdminLog(models.Model):
+    admin = models.ForeignKey(User, on_delete=models.CASCADE)
+    action = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+class EmailOTP(models.Model):
+    PURPOSE_CHOICES = [
+        ('registration', 'Registration'),
+        ('password_reset', 'Password reset'),
+    ]
+
+    email = models.EmailField(db_index=True)
+    purpose = models.CharField(max_length=20, choices=PURPOSE_CHOICES)
+    code_hash = models.CharField(max_length=128)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    consumed_at = models.DateTimeField(blank=True, null=True)
+    attempts = models.PositiveSmallIntegerField(default=0)
+
+class LessonPage(models.Model):
+    lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name='pages')
+    page_number = models.IntegerField(default=1)
+    content = models.TextField()
+
+class SystemLog(models.Model):
+    user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
+    action = models.CharField(max_length=255)
+    timestamp = models.DateTimeField(auto_now_add=True)

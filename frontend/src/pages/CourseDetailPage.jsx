@@ -6,6 +6,8 @@ import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 import LessonComments from '../components/LessonComments';
 import QuizModal from '../components/QuizModal';
+import CourseAssignments from '../components/CourseAssignments';
+import LessonPagination from '../components/LessonPagination';
 import {
   ChevronDown,
   ChevronRight,
@@ -39,6 +41,11 @@ const getYoutubeEmbedUrl = (mediaUrl, startPosition = 0) => {
   }
 };
 
+const getAttachmentUrl = (attachment) => {
+  if (!attachment || attachment.startsWith('http')) return attachment;
+  return `${import.meta.env.VITE_MEDIA_BASE_URL || 'http://localhost:8000'}${attachment}`;
+};
+
 const CourseDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -53,10 +60,15 @@ const CourseDetailPage = () => {
   const [openModules, setOpenModules] = useState({});
   const [completedLessons, setCompletedLessons] = useState(new Set());
   const [lessonPositions, setLessonPositions] = useState({});
+  const [lessonPages, setLessonPages] = useState({});
+  const [activePage, setActivePage] = useState(1);
+  const [loadingLessonId, setLoadingLessonId] = useState(null);
+  const [savingPage, setSavingPage] = useState(false);
   const [savingProgress, setSavingProgress] = useState(false);
   const [isEnrolled, setIsEnrolled] = useState(false);
   const lastSavedPosition = useRef({ lessonId: null, position: 0, saving: false });
   const videoPlayerRef = useRef(null);
+  const lessonRequestRef = useRef(0);
 
   // Quizzes state
   const [quizzes, setQuizzes] = useState([]);
@@ -67,6 +79,13 @@ const CourseDetailPage = () => {
       try {
         setLoading(true);
         setError('');
+        lessonRequestRef.current += 1;
+        setLoadingLessonId(null);
+        setActiveLesson(null);
+        setLessonPositions({});
+        setLessonPages({});
+        setCompletedLessons(new Set());
+        setIsEnrolled(false);
         const progressRequest = isAuthenticated
           ? courseApi.getMyProgress(id).catch((progressError) => {
               console.warn('Could not fetch user progress:', progressError);
@@ -88,8 +107,6 @@ const CourseDetailPage = () => {
           }
         }
 
-        let lastPositionLessonId = null;
-
         // Check enrollment status and restore progress from backend
         if (isAuthenticated) {
           try {
@@ -106,14 +123,14 @@ const CourseDetailPage = () => {
                   myProgress.map((progress) => [progress.lesson_id, progress.last_position || 0])
                 )
               );
+              setLessonPages(
+                Object.fromEntries(
+                  myProgress.map((progress) => [progress.lesson_id, progress.last_page || 1])
+                )
+              );
               setCompletedLessons(
                 new Set(myProgress.filter((progress) => progress.is_completed).map((progress) => progress.lesson_id))
               );
-
-              const lastStudied = myProgress[0];
-              if (lastStudied) {
-                lastPositionLessonId = lastStudied.lesson_id;
-              }
             }
           } catch (e) {
             console.warn('Could not fetch user enrollments/progress:', e);
@@ -122,26 +139,8 @@ const CourseDetailPage = () => {
 
         // Open modules and select appropriate lesson
         if (data.modules && data.modules.length > 0) {
-          const initialOpenState = {};
-          let targetLesson = null;
-
-          data.modules.forEach((mod) => {
-            initialOpenState[mod.id] = true; // Open modules for quick navigation
-            if (lastPositionLessonId && !targetLesson) {
-              const found = mod.lessons?.find((l) => l.id === lastPositionLessonId);
-              if (found) targetLesson = found;
-            }
-          });
-
+          const initialOpenState = Object.fromEntries(data.modules.map((mod) => [mod.id, false]));
           setOpenModules(initialOpenState);
-
-          if (!targetLesson) {
-            targetLesson = data.modules[0]?.lessons?.[0];
-          }
-
-          if (targetLesson) {
-            setActiveLesson(targetLesson);
-          }
         }
       } catch (err) {
         console.error('Failed to load course details:', err);
@@ -161,13 +160,47 @@ const CourseDetailPage = () => {
     }));
   };
 
-  const handleSelectLesson = (lesson) => {
-    setActiveLesson(lesson);
-    lastSavedPosition.current = {
-      lessonId: lesson.id,
-      position: lessonPositions[lesson.id] || 0,
-      saving: false,
-    };
+  const handleSelectLesson = async (lesson, moduleId) => {
+    const requestId = lessonRequestRef.current + 1;
+    lessonRequestRef.current = requestId;
+    setLoadingLessonId(lesson.id);
+    setActiveLesson(null);
+    setOpenModules((previous) => ({ ...previous, [moduleId]: true }));
+    try {
+      const details = await courseApi.getLessonDetail(lesson.id);
+      if (lessonRequestRef.current !== requestId) return;
+      setActiveLesson(details);
+      setActivePage(lessonPages[lesson.id] || 1);
+      lastSavedPosition.current = {
+        lessonId: lesson.id,
+        position: lessonPositions[lesson.id] || 0,
+        saving: false,
+      };
+    } catch (loadError) {
+      if (lessonRequestRef.current !== requestId) return;
+      console.error('Failed to load lesson:', loadError);
+      toast.error('Không thể tải nội dung bài học.');
+    } finally {
+      if (lessonRequestRef.current === requestId) setLoadingLessonId(null);
+    }
+  };
+
+  const handlePageChange = async (nextPage) => {
+    if (!activeLesson || nextPage < 1 || nextPage === activePage) return;
+    if (isAuthenticated) {
+      try {
+        setSavingPage(true);
+        await courseApi.updateLessonProgress(activeLesson.id, { last_page: nextPage });
+      } catch (saveError) {
+        console.error('Could not save lesson page:', saveError);
+        toast.error('Không thể lưu trang học hiện tại.');
+        setSavingPage(false);
+        return;
+      }
+      setSavingPage(false);
+    }
+    setActivePage(nextPage);
+    setLessonPages((previous) => ({ ...previous, [activeLesson.id]: nextPage }));
   };
 
   const handleVideoTimeUpdate = async (event) => {
@@ -416,7 +449,7 @@ const CourseDetailPage = () => {
                               return (
                                 <button
                                   key={lesson.id}
-                                  onClick={() => handleSelectLesson(lesson)}
+                                  onClick={() => handleSelectLesson(lesson, mod.id)}
                                   className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer ${
                                     isSelected
                                       ? 'bg-indigo-600 text-white font-medium shadow-xs'
@@ -429,6 +462,8 @@ const CourseDetailPage = () => {
                                       {lessonIdx + 1}. {lesson.title}
                                     </span>
                                   </div>
+                                  <div className="flex shrink-0 items-center gap-2">
+                                  {lessonPages[lesson.id] > 1 && <span className="text-[10px] text-slate-500">Trang {lessonPages[lesson.id]}</span>}
                                   <span
                                     className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${
                                       isSelected
@@ -438,6 +473,7 @@ const CourseDetailPage = () => {
                                   >
                                     {lesson.lesson_type}
                                   </span>
+                                  </div>
                                 </button>
                               );
                             })
@@ -486,7 +522,9 @@ const CourseDetailPage = () => {
 
         {/* Right Side: Active Lesson Viewer & Comments (8 cols) */}
         <div className="lg:col-span-8 space-y-6">
-          {activeLesson ? (
+          {loadingLessonId ? (
+            <div className="border-y border-slate-200 py-16 text-center text-sm text-slate-500">Đang tải bài học…</div>
+          ) : activeLesson ? (
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 sm:p-8 space-y-6">
               {/* Header of Active Lesson */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-100">
@@ -577,28 +615,28 @@ const CourseDetailPage = () => {
               )}
 
               {/* Lesson Text Content */}
-              <div className="prose prose-slate max-w-none">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-2">
-                  Nội dung chi tiết bài học
-                </h3>
-                {activeLesson.content ? (
-                  <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 text-slate-800 text-sm leading-relaxed whitespace-pre-line font-normal">
-                    {activeLesson.content}
-                  </div>
-                ) : (
-                  <p className="text-sm text-slate-400 italic">
-                    Bài học này không có phần văn bản bổ sung.
-                  </p>
-                )}
-              </div>
+              {(activeLesson.attached_file || activeLesson.attachment) && (
+                <a
+                  href={getAttachmentUrl(activeLesson.attached_file || activeLesson.attachment)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm font-semibold text-emerald-800 hover:bg-emerald-100"
+                >
+                  <FileText className="h-4 w-4" /> Tải học liệu đính kèm
+                </a>
+              )}
+              <LessonPagination
+                lesson={activeLesson}
+                pageNumber={activePage}
+                saving={savingPage}
+                onPageChange={handlePageChange}
+              />
             </div>
           ) : (
             <div className="bg-white rounded-2xl border border-slate-200 p-12 text-center space-y-3">
               <BookOpen className="w-12 h-12 text-slate-300 mx-auto" />
-              <h3 className="text-lg font-bold text-slate-700">Chọn một bài học từ đề cương</h3>
-              <p className="text-sm text-slate-500">
-                Nhấp vào danh sách bài học bên trái để xem nội dung bài giảng và làm bài tập.
-              </p>
+              <h3 className="text-lg font-semibold text-slate-800">Chọn một bài học từ đề cương</h3>
+              <p className="text-sm text-slate-500">Nội dung sẽ tải khi bạn mở bài học.</p>
             </div>
           )}
 
@@ -607,6 +645,8 @@ const CourseDetailPage = () => {
             <LessonComments lessonId={activeLesson.id} />
           )}
 
+          <CourseAssignments courseId={course.id} isEnrolled={isEnrolled} />
+
           {/* Course Overview Details */}
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-4">
             <h3 className="text-lg font-bold text-slate-800">Giới thiệu khóa học</h3>
@@ -614,14 +654,14 @@ const CourseDetailPage = () => {
               {course.description || 'Chưa có mô tả chi tiết.'}
             </p>
 
-            {course.requirements && (
+            {course.prerequisites?.length > 0 && (
               <div className="pt-3 border-t border-slate-100">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                  Yêu cầu đầu vào
+                  Khóa học tiên quyết
                 </h4>
-                <p className="text-sm text-slate-600 bg-amber-50/60 p-3.5 rounded-xl border border-amber-200/60 leading-relaxed">
-                  {course.requirements}
-                </p>
+                <ul className="space-y-1 text-sm text-slate-700">
+                  {course.prerequisites.map((prerequisiteId) => <li key={prerequisiteId}>Khóa học #{prerequisiteId}</li>)}
+                </ul>
               </div>
             )}
           </div>

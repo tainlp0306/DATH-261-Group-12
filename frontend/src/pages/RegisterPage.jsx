@@ -19,6 +19,8 @@ const RegisterPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [role, setRole] = useState('learner');
+  const [otp, setOtp] = useState('');
+  const [otpRequested, setOtpRequested] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -28,22 +30,30 @@ const RegisterPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!username.trim() || !password.trim()) {
-      setError('Vui lòng điền đầy đủ tên đăng nhập và mật khẩu!');
+    if (!username.trim() || !email.trim() || !password.trim()) {
+      setError('Vui lòng nhập tên đăng nhập, email và mật khẩu.');
+      return;
+    }
+    if (otpRequested && !/^\d{6}$/.test(otp)) {
+      setError('Mã OTP phải gồm 6 chữ số.');
       return;
     }
 
     setError('');
     setLoading(true);
 
-    const result = await register(username, email, password, role);
+    const result = await register(username, email, password, role, otpRequested ? otp : '');
     setLoading(false);
 
     if (result.success) {
+      if (result.requiresOtp) {
+        setOtpRequested(true);
+        return;
+      }
       if (role === 'instructor') {
         navigate('/instructor/courses/create');
       } else {
-        navigate('/courses');
+        navigate('/my-courses');
       }
     } else {
       setError(result.error);
@@ -74,43 +84,6 @@ const RegisterPage = () => {
           </div>
         )}
 
-        {/* Google Sign-Up Button */}
-        <div>
-          <button
-            type="button"
-            onClick={() => alert('Tính năng Đăng ký nhanh với Google OAuth đang được tích hợp cùng hệ thống!')}
-            className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-white hover:bg-slate-50 border border-slate-200 hover:border-slate-300 rounded-xl text-slate-700 font-semibold text-sm shadow-xs transition-all cursor-pointer group"
-          >
-            <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24">
-              <path
-                fill="#4285F4"
-                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-              />
-              <path
-                fill="#34A853"
-                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-              />
-              <path
-                fill="#FBBC05"
-                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
-              />
-              <path
-                fill="#EA4335"
-                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
-              />
-            </svg>
-            <span className="group-hover:text-slate-900">Đăng ký với Google</span>
-          </button>
-        </div>
-
-        {/* Divider */}
-        <div className="relative flex items-center justify-center">
-          <div className="border-t border-slate-200 w-full"></div>
-          <span className="bg-white px-3 text-xs uppercase tracking-wider text-slate-400 font-semibold absolute">
-            Hoặc điền thông tin
-          </span>
-        </div>
-
         {/* Register Form */}
         <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
           {/* Role Selection */}
@@ -122,6 +95,7 @@ const RegisterPage = () => {
               <button
                 type="button"
                 onClick={() => setRole('learner')}
+                disabled={otpRequested}
                 className={`p-3.5 rounded-2xl border-2 flex flex-col items-center justify-center gap-2 transition-all ${
                   role === 'learner'
                     ? 'border-indigo-600 bg-indigo-50/70 text-indigo-700 shadow-sm'
@@ -136,6 +110,7 @@ const RegisterPage = () => {
               <button
                 type="button"
                 onClick={() => setRole('instructor')}
+                disabled={otpRequested}
                 className={`p-3.5 rounded-2xl border-2 flex flex-col items-center justify-center gap-2 transition-all ${
                   role === 'instructor'
                     ? 'border-purple-600 bg-purple-50/70 text-purple-700 shadow-sm'
@@ -161,6 +136,7 @@ const RegisterPage = () => {
               <input
                 type="text"
                 required
+                disabled={otpRequested}
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 placeholder="VD: learner_pro"
@@ -172,7 +148,7 @@ const RegisterPage = () => {
           {/* Email */}
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-              Email (tùy chọn)
+              Email để xác minh <span className="text-rose-600">*</span>
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -180,6 +156,8 @@ const RegisterPage = () => {
               </div>
               <input
                 type="email"
+                required
+                disabled={otpRequested}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="example@lingosphere.edu.vn"
@@ -200,9 +178,11 @@ const RegisterPage = () => {
               <input
                 type={showPassword ? 'text' : 'password'}
                 required
+                minLength={8}
+                disabled={otpRequested}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Tối thiểu 6 ký tự"
+                placeholder="Tối thiểu 8 ký tự"
                 className="w-full pl-11 pr-11 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all text-sm"
               />
               <button
@@ -215,6 +195,26 @@ const RegisterPage = () => {
             </div>
           </div>
 
+          {otpRequested && (
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5">
+                Mã OTP 6 chữ số
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                maxLength={6}
+                required
+                value={otp}
+                onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="000000"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-center text-lg font-bold tracking-[0.3em] focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+              />
+              <p className="mt-2 text-xs text-slate-500">Mã đã gửi đến {email}. Mã có hiệu lực trong 10 phút.</p>
+            </div>
+          )}
+
           {/* Submit */}
           <button
             type="submit"
@@ -225,7 +225,7 @@ const RegisterPage = () => {
               <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
             ) : (
               <>
-                <span>Hoàn tất đăng ký</span>
+                <span>{otpRequested ? 'Xác minh & tạo tài khoản' : 'Gửi mã xác minh'}</span>
                 <ArrowRight className="w-4 h-4" />
               </>
             )}

@@ -63,16 +63,44 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const register = async (username, email, password, userRole = 'learner') => {
+  const loginWithGoogle = async (idToken) => {
     try {
-      await authApi.register({
+      const tokens = await authApi.googleLogin(idToken);
+      localStorage.setItem('access_token', tokens.access);
+      localStorage.setItem('refresh_token', tokens.refresh);
+      setAccessToken(tokens.access);
+      const profile = await authApi.getProfile();
+      setUser(profile);
+      setRole(profile.role);
+      localStorage.setItem('user', JSON.stringify(profile));
+      localStorage.setItem('role', profile.role);
+      return { success: true, user: profile };
+    } catch (error) {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      setAccessToken(null);
+      return {
+        success: false,
+        error: error.response?.data?.error || 'Đăng nhập Google thất bại.',
+      };
+    }
+  };
+
+  const register = async (username, email, password, userRole = 'learner', otp = '') => {
+    try {
+      if (!otp) {
+        const result = await authApi.requestRegistrationOtp(email);
+        return { success: true, requiresOtp: true, message: result.message };
+      }
+
+      await authApi.confirmRegistrationOtp({
         username,
         email,
         password,
         role: userRole,
+        otp,
       });
 
-      // Auto login after registration
       const loginResult = await login(username, password);
       return loginResult;
     } catch (error) {
@@ -115,6 +143,7 @@ export const AuthProvider = ({ children }) => {
     isLearner: role === 'learner',
     loading,
     login,
+    loginWithGoogle,
     register,
     logout,
   };

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { MessageSquare, Send, Clock } from 'lucide-react';
+import { MessageSquare, Send, Clock, Flag } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { courseApi } from '../api/courseApi';
+import { authApi } from '../api/authApi';
 import { useAuth } from '../context/AuthContext';
 
 const LessonComments = ({ lessonId }) => {
@@ -51,6 +52,17 @@ const LessonComments = ({ lessonId }) => {
       toast.error(err.response?.data?.content?.[0] || 'Không thể gửi bình luận. Vui lòng thử lại!');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleReport = async (comment) => {
+    const reason = window.prompt('Lý do báo cáo bình luận này:');
+    if (!reason?.trim()) return;
+    try {
+      await authApi.reportComment(comment.id, reason.trim());
+      toast.success('Đã gửi báo cáo đến quản trị viên.');
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Không thể gửi báo cáo.');
     }
   };
 
@@ -152,6 +164,15 @@ const LessonComments = ({ lessonId }) => {
                     </span>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => handleReport(comment)}
+                  title="Báo cáo bình luận"
+                  aria-label="Báo cáo bình luận"
+                  className="rounded-md p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-700"
+                >
+                  <Flag className="h-4 w-4" />
+                </button>
               </div>
 
               <p className="text-sm text-slate-700 whitespace-pre-line pl-10">

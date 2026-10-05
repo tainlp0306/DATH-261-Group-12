@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { courseApi } from '../api/courseApi';
 import LoadingSpinner from '../components/LoadingSpinner';
+import InstructorAssignments from '../components/InstructorAssignments';
 import {
   ArrowLeft,
   Layers,
@@ -26,7 +27,8 @@ import {
   ChevronRight,
   Settings,
   FolderPlus,
-  Link2
+  Link2,
+  Megaphone,
 } from 'lucide-react';
 
 const InstructorManageCoursePage = () => {
@@ -55,13 +57,18 @@ const InstructorManageCoursePage = () => {
   const [lessonType, setLessonType] = useState('text');
   const [lessonContent, setLessonContent] = useState('');
   const [mediaUrl, setMediaUrl] = useState('');
+  const [lessonAttachment, setLessonAttachment] = useState(null);
   const [lessonOrder, setLessonOrder] = useState(1);
   const [lessonLoading, setLessonLoading] = useState(false);
+  const [announcementTitle, setAnnouncementTitle] = useState('');
+  const [announcementMessage, setAnnouncementMessage] = useState('');
+  const [announcementLoading, setAnnouncementLoading] = useState(false);
 
   // Course Settings Form State
   const [settingsTitle, setSettingsTitle] = useState('');
   const [settingsDescription, setSettingsDescription] = useState('');
-  const [settingsRequirements, setSettingsRequirements] = useState('');
+  const [prerequisiteOptions, setPrerequisiteOptions] = useState([]);
+  const [settingsPrerequisites, setSettingsPrerequisites] = useState([]);
   const [settingsIsPublished, setSettingsIsPublished] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
 
@@ -73,11 +80,15 @@ const InstructorManageCoursePage = () => {
   const fetchCourseData = async () => {
     try {
       setLoading(true);
-      const data = await courseApi.getCourseDetail(id);
+      const [data, options] = await Promise.all([
+        courseApi.getCourseDetail(id),
+        courseApi.getPrerequisiteOptions(),
+      ]);
       setCourse(data);
       setSettingsTitle(data.title || '');
       setSettingsDescription(data.description || '');
-      setSettingsRequirements(data.requirements || '');
+      setSettingsPrerequisites(data.prerequisites || []);
+      setPrerequisiteOptions((Array.isArray(options) ? options : options.results || []).filter((option) => option.id !== Number(id)));
       setSettingsIsPublished(!!data.is_published);
 
       // Open all modules by default
@@ -133,7 +144,6 @@ const InstructorManageCoursePage = () => {
       const updated = await courseApi.updateCourse(course.id, {
         title: course.title,
         description: course.description,
-        requirements: course.requirements || '',
         is_published: !course.is_published,
       });
       setCourse((prev) => ({ ...prev, is_published: updated.is_published }));
@@ -214,6 +224,7 @@ const InstructorManageCoursePage = () => {
     setLessonType('text');
     setLessonContent('');
     setMediaUrl('');
+    setLessonAttachment(null);
     setLessonOrder((mod.lessons?.length || 0) + 1);
     setShowLessonModal(true);
   };
@@ -225,6 +236,7 @@ const InstructorManageCoursePage = () => {
     setLessonType(lesson.lesson_type || 'text');
     setLessonContent(lesson.content || '');
     setMediaUrl(lesson.media_url || '');
+    setLessonAttachment(null);
     setLessonOrder(lesson.order || 1);
     setShowLessonModal(true);
   };
@@ -242,6 +254,7 @@ const InstructorManageCoursePage = () => {
           lesson_type: lessonType,
           content: lessonContent,
           media_url: mediaUrl,
+          attached_file: lessonAttachment,
           order: Number(lessonOrder),
         });
         toast.success(`Đã cập nhật bài học: "${updated.title}"`);
@@ -252,6 +265,7 @@ const InstructorManageCoursePage = () => {
           lesson_type: lessonType,
           content: lessonContent,
           media_url: mediaUrl,
+          attached_file: lessonAttachment,
           order: Number(lessonOrder),
         });
         toast.success(`Đã thêm bài học: "${created.title}"`);
@@ -294,7 +308,7 @@ const InstructorManageCoursePage = () => {
       const updated = await courseApi.updateCourse(id, {
         title: settingsTitle,
         description: settingsDescription,
-        requirements: settingsRequirements,
+        prerequisites: settingsPrerequisites,
         is_published: settingsIsPublished,
       });
       setCourse(updated);
@@ -319,6 +333,24 @@ const InstructorManageCoursePage = () => {
     } catch (err) {
       console.error('Delete course error:', err);
       toast.error('Xóa khóa học thất bại.');
+    }
+  };
+
+  const handleSendAnnouncement = async (event) => {
+    event.preventDefault();
+    try {
+      setAnnouncementLoading(true);
+      const result = await courseApi.sendCourseAnnouncement(id, {
+        title: announcementTitle.trim(),
+        message: announcementMessage.trim(),
+      });
+      toast.success(`Đã gửi thông báo đến ${result.created} người nhận.`);
+      setAnnouncementTitle('');
+      setAnnouncementMessage('');
+    } catch (err) {
+      toast.error(err.response?.data?.error || 'Không thể gửi thông báo lớp học.');
+    } finally {
+      setAnnouncementLoading(false);
     }
   };
 
@@ -457,6 +489,26 @@ const InstructorManageCoursePage = () => {
           }`}
         >
           <Users className="w-4 h-4" /> Danh sách Sinh viên & Tiến độ
+        </button>
+
+        <button
+          onClick={() => setActiveTab('announcements')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+            activeTab === 'announcements' ? 'bg-emerald-800 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <Megaphone className="w-4 h-4" /> Thông báo lớp học
+        </button>
+
+        <button
+          onClick={() => setActiveTab('assignments')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+            activeTab === 'assignments'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <FileText className="w-4 h-4" /> Bài tập & Chấm điểm
         </button>
 
         <button
@@ -603,6 +655,16 @@ const InstructorManageCoursePage = () => {
                                         <span className="truncate">{lesson.media_url}</span>
                                       </a>
                                     )}
+                                    {lesson.attached_file && (
+                                      <a
+                                        href={lesson.attached_file}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex items-center gap-1 text-[11px] text-emerald-700 hover:underline mt-0.5"
+                                      >
+                                        <Link2 className="w-3 h-3 shrink-0" /> Tải học liệu đính kèm
+                                      </a>
+                                    )}
                                   </div>
                                 </div>
 
@@ -634,6 +696,44 @@ const InstructorManageCoursePage = () => {
             </div>
           )}
         </div>
+      )}
+
+      {activeTab === 'assignments' && <InstructorAssignments courseId={Number(id)} />}
+
+      {activeTab === 'announcements' && (
+        <section className="max-w-2xl space-y-5">
+          <div className="border-b border-slate-200 pb-4">
+            <h2 className="text-lg font-semibold text-slate-950">Gửi thông báo lớp học</h2>
+            <p className="mt-1 text-sm text-slate-600">Thông báo được gửi đến học viên đã đăng ký khóa học này.</p>
+          </div>
+          <form onSubmit={handleSendAnnouncement} className="space-y-4">
+            <label className="block text-sm font-semibold text-slate-700">
+              Tiêu đề
+              <input
+                required
+                maxLength={255}
+                value={announcementTitle}
+                onChange={(event) => setAnnouncementTitle(event.target.value)}
+                className="mt-1.5 w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+              />
+            </label>
+            <label className="block text-sm font-semibold text-slate-700">
+              Nội dung
+              <textarea
+                required
+                maxLength={255}
+                rows={4}
+                value={announcementMessage}
+                onChange={(event) => setAnnouncementMessage(event.target.value)}
+                className="mt-1.5 w-full resize-y rounded-lg border border-slate-300 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-700"
+              />
+              <span className="mt-1 block text-right text-xs font-normal text-slate-500">{announcementMessage.length}/255</span>
+            </label>
+            <button type="submit" disabled={announcementLoading} className="inline-flex min-h-10 items-center gap-2 bg-emerald-800 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-900 disabled:opacity-50">
+              <Megaphone className="h-4 w-4" /> {announcementLoading ? 'Đang gửi…' : 'Gửi thông báo'}
+            </button>
+          </form>
+        </section>
       )}
 
       {/* Tab 2: Students Progress Management */}
@@ -765,17 +865,21 @@ const InstructorManageCoursePage = () => {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold uppercase text-slate-600 mb-1.5">
-                  Yêu cầu đầu vào (Requirements)
-                </label>
-                <textarea
-                  rows={2}
-                  value={settingsRequirements}
-                  onChange={(e) => setSettingsRequirements(e.target.value)}
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:bg-white"
-                />
-              </div>
+              <label className="block text-xs font-bold uppercase text-slate-600">
+                Khóa học tiên quyết
+                <select
+                  multiple
+                  size={Math.min(Math.max(prerequisiteOptions.length, 3), 6)}
+                  value={settingsPrerequisites.map(String)}
+                  onChange={(event) => setSettingsPrerequisites(Array.from(event.target.selectedOptions, (option) => Number(option.value)))}
+                  className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white p-2 text-sm font-normal normal-case focus:outline-none focus:ring-2 focus:ring-emerald-700"
+                >
+                  {prerequisiteOptions.map((option) => (
+                    <option key={option.id} value={option.id}>{option.title} · {option.instructor_username}</option>
+                  ))}
+                </select>
+                <span className="mt-1 block text-xs font-normal normal-case text-slate-500">Có thể chọn nhiều khóa học.</span>
+              </label>
 
               <div className="flex items-center justify-between p-3.5 bg-slate-50 rounded-xl border border-slate-200">
                 <div>
@@ -935,6 +1039,38 @@ const InstructorManageCoursePage = () => {
                 <span className="text-[11px] text-slate-400 mt-1 block">
                   Đính kèm link Google Drive, YouTube, Vimeo hoặc tài liệu Slide trực tuyến.
                 </span>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase text-slate-600 mb-1">
+                  Tệp học liệu đính kèm (tối đa 25 MB)
+                </label>
+                {editingLesson?.attached_file && (
+                  <a
+                    href={editingLesson.attached_file}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mb-2 inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:underline"
+                  >
+                    <Link2 className="h-3.5 w-3.5" /> Học liệu hiện tại
+                  </a>
+                )}
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.zip,.txt"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0] || null;
+                    if (file && file.size > 25 * 1024 * 1024) {
+                      toast.error('Tệp học liệu không được vượt quá 25 MB.');
+                      event.target.value = '';
+                      setLessonAttachment(null);
+                      return;
+                    }
+                    setLessonAttachment(file);
+                  }}
+                  className="block w-full rounded-lg border border-slate-200 bg-slate-50 p-2 text-xs text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-100 file:px-3 file:py-1.5 file:font-semibold file:text-indigo-800"
+                />
+                {lessonAttachment && <p className="mt-1 text-xs text-slate-500">{lessonAttachment.name}</p>}
               </div>
 
               <div>

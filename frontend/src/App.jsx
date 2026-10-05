@@ -1,6 +1,7 @@
 import React from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -15,6 +16,11 @@ import InstructorManageCoursePage from './pages/InstructorManageCoursePage';
 import AdminDashboardPage from './pages/AdminDashboardPage';
 import UnauthorizedPage from './pages/UnauthorizedPage';
 import NotFoundPage from './pages/NotFoundPage';
+import PasswordResetPage from './pages/PasswordResetPage';
+import ForgotPassword from './pages/ForgotPassword';
+import MyCoursesPage from './pages/MyCoursesPage';
+import HomePage from './pages/HomePage';
+import ProfilePage from './pages/ProfilePage';
 
 function App() {
   return (
@@ -26,11 +32,36 @@ function App() {
           <main className="flex-1">
             <Routes>
               {/* Default Redirect */}
-              <Route path="/" element={<Navigate to="/courses" replace />} />
+              <Route path="/" element={<HomePage />} />
 
               {/* Public Auth Routes */}
-              <Route path="/login" element={<LoginPage />} />
+              <Route
+                path="/login"
+                element={(
+                  <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID || ''}>
+                    <LoginPage />
+                  </GoogleOAuthProvider>
+                )}
+              />
               <Route path="/register" element={<RegisterPage />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<PasswordResetPage />} />
+              <Route
+                path="/my-courses"
+                element={(
+                  <ProtectedRoute allowedRoles={['learner']}>
+                    <MyCoursesPage />
+                  </ProtectedRoute>
+                )}
+              />
+              <Route
+                path="/profile"
+                element={(
+                  <ProtectedRoute>
+                    <ProfilePage />
+                  </ProtectedRoute>
+                )}
+              />
 
               {/* Course Directory & Detail */}
               <Route path="/courses" element={<CourseListPage />} />

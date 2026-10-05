@@ -11,7 +11,7 @@ export const adminApi = {
   getUsers: async (role = '') => {
     const params = role ? { role } : {};
     const response = await api.get('admin/users/', { params });
-    return response.data;
+    return response.data.results || response.data;
   },
 
   // POST /admin/users/:user_id/toggle-status/
@@ -29,6 +29,21 @@ export const adminApi = {
   // GET /admin/courses/
   getAllCourses: async () => {
     const response = await api.get('admin/courses/');
+    return response.data.results || response.data;
+  },
+
+  getAdminLogs: async () => {
+    const response = await api.get('admin/logs/');
+    return response.data;
+  },
+
+  getReports: async () => {
+    const response = await api.get('admin/reports/');
+    return response.data;
+  },
+
+  resolveReport: async (reportId, isResolved) => {
+    const response = await api.patch(`admin/reports/${reportId}/`, { is_resolved: isResolved });
     return response.data;
   },
 };

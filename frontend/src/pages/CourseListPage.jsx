@@ -1,42 +1,27 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useEffectEvent } from 'react';
 import { courseApi } from '../api/courseApi';
 import { useAuth } from '../context/AuthContext';
-import CourseCard from '../components/CourseCard';
 import LoadingSpinner from '../components/LoadingSpinner';
-import { 
-  Search, 
-  BookOpen, 
-  Sparkles, 
-  GraduationCap, 
-  CheckCircle2, 
-  AlertCircle,
-  X,
-  Layers
-} from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { Search, BookOpen, AlertCircle, X } from 'lucide-react';
 
 const CourseListPage = () => {
   const [courses, setCourses] = useState([]);
   const [enrollments, setEnrollments] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [ordering, setOrdering] = useState('-created_at');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCourses, setTotalCourses] = useState(0);
   const [activeFilter, setActiveFilter] = useState('all'); // 'all' | 'enrolled'
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [toastMessage, setToastMessage] = useState(null);
+  const { isAuthenticated } = useAuth();
 
-  const { isAuthenticated, user, isInstructor } = useAuth();
-
-  const showToast = (message, type = 'success') => {
-    setToastMessage({ message, type });
-    setTimeout(() => setToastMessage(null), 4000);
-  };
-
-  const fetchCoursesAndEnrollments = useCallback(async (searchQuery = '') => {
+  const fetchCoursesAndEnrollments = useCallback(async (searchQuery = '', page = 1, order = '-created_at') => {
     try {
-      setLoading(true);
-      setError('');
-      
-      const coursesData = await courseApi.getCourses(searchQuery);
-      setCourses(coursesData);
+      const coursesData = await courseApi.getCourses(searchQuery, page, order);
+      setCourses(Array.isArray(coursesData) ? coursesData : coursesData.results || []);
+      setTotalCourses(coursesData.count ?? coursesData.length ?? 0);
 
       if (isAuthenticated) {
         try {
@@ -54,38 +39,27 @@ const CourseListPage = () => {
     }
   }, [isAuthenticated]);
 
+  const fetchInitialCourses = useEffectEvent(() => fetchCoursesAndEnrollments());
+
   useEffect(() => {
-    fetchCoursesAndEnrollments();
+    fetchInitialCourses();
   }, [fetchCoursesAndEnrollments]);
 
   // Handle Search submit
   const handleSearch = (e) => {
     e.preventDefault();
-    fetchCoursesAndEnrollments(searchTerm);
+    setError('');
+    setLoading(true);
+    setCurrentPage(1);
+    fetchCoursesAndEnrollments(searchTerm, 1, ordering);
   };
 
   const handleClearSearch = () => {
     setSearchTerm('');
-    fetchCoursesAndEnrollments('');
-  };
-
-  // Handle Enroll
-  const handleEnroll = async (courseId) => {
-    if (!isAuthenticated) {
-      showToast('Vui lòng đăng nhập để đăng ký khóa học!', 'error');
-      return;
-    }
-
-    try {
-      await courseApi.enrollCourse(courseId);
-      showToast('Đăng ký khóa học thành công! Chúc bạn học tập tốt.', 'success');
-      // Refresh enrollments
-      const updatedEnrollments = await courseApi.getMyEnrollments();
-      setEnrollments(updatedEnrollments);
-    } catch (err) {
-      const msg = err.response?.data?.message || err.response?.data?.error || 'Đăng ký khóa học thất bại.';
-      showToast(msg, 'error');
-    }
+    setError('');
+    setLoading(true);
+    setCurrentPage(1);
+    fetchCoursesAndEnrollments('', 1, ordering);
   };
 
   const enrolledCourseIds = new Set(enrollments.map((item) => item.course));
@@ -96,44 +70,33 @@ const CourseListPage = () => {
     }
     return true;
   });
+  const totalPages = Math.max(1, Math.ceil(totalCourses / 12));
+
+  const handlePageChange = (page) => {
+    setError('');
+    setLoading(true);
+    setCurrentPage(page);
+    fetchCoursesAndEnrollments(searchTerm, page, ordering);
+  };
+
+  const handleOrderingChange = (event) => {
+    const nextOrdering = event.target.value;
+    setError('');
+    setLoading(true);
+    setOrdering(nextOrdering);
+    setCurrentPage(1);
+    fetchCoursesAndEnrollments(searchTerm, 1, nextOrdering);
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-      {/* Toast Notification */}
-      {toastMessage && (
-        <div
-          className={`fixed bottom-6 right-6 z-50 flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl text-sm font-medium transition-all transform duration-300 animate-bounce ${
-            toastMessage.type === 'success'
-              ? 'bg-emerald-600 text-white shadow-emerald-200'
-              : 'bg-rose-600 text-white shadow-rose-200'
-          }`}
-        >
-          {toastMessage.type === 'success' ? (
-            <CheckCircle2 className="w-5 h-5 shrink-0" />
-          ) : (
-            <AlertCircle className="w-5 h-5 shrink-0" />
-          )}
-          <span>{toastMessage.message}</span>
+      <div className="flex flex-col justify-between gap-5 border-y border-emerald-900/15 bg-[#e8f2ed] px-5 py-6 sm:flex-row sm:items-end sm:px-7">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.14em] text-emerald-800">Thư viện học tập</p>
+          <h1 className="mt-2 font-display text-3xl font-semibold text-slate-950">Tất cả khóa học</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-700">Tìm kiếm và tiếp tục các chương trình học do giảng viên LingoSphere biên soạn.</p>
         </div>
-      )}
-
-      {/* Hero Banner */}
-      <div className="relative rounded-3xl bg-gradient-to-r from-indigo-900 via-indigo-800 to-purple-900 text-white p-8 sm:p-12 overflow-hidden shadow-xl shadow-indigo-100">
-        <div className="absolute top-0 right-0 -mt-8 -mr-8 w-64 h-64 bg-purple-500/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-1/3 -mb-12 w-80 h-80 bg-indigo-500/20 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 max-w-2xl space-y-4">
-          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-white/10 backdrop-blur-md text-indigo-200 border border-white/15">
-            <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-            Nền tảng LingoSphere LMS
-          </span>
-          <h1 className="text-3xl sm:text-4xl font-black tracking-tight leading-tight">
-            Nâng tầm tri thức cùng các khóa học chất lượng cao
-          </h1>
-          <p className="text-indigo-200 text-sm sm:text-base leading-relaxed">
-            Khám phá thư viện bài giảng phong phú với video, bài tập và tài liệu tương tác từ các giảng viên hàng đầu.
-          </p>
-        </div>
+        <p className="shrink-0 text-sm font-medium tabular-nums text-emerald-950">{totalCourses} khóa học</p>
       </div>
 
       {/* Controls & Search Bar */}
@@ -194,6 +157,19 @@ const CourseListPage = () => {
             </button>
           </div>
         )}
+        <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+          <span className="shrink-0">Sắp xếp</span>
+          <select
+            value={ordering}
+            onChange={handleOrderingChange}
+            className="min-w-36 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+          >
+            <option value="-created_at">Mới nhất</option>
+            <option value="created_at">Cũ nhất</option>
+            <option value="title">Tên A-Z</option>
+            <option value="-title">Tên Z-A</option>
+          </select>
+        </label>
       </div>
 
       {/* Error state */}
@@ -202,7 +178,11 @@ const CourseListPage = () => {
           <AlertCircle className="w-10 h-10 text-rose-500" />
           <p className="text-rose-800 font-semibold">{error}</p>
           <button
-            onClick={() => fetchCoursesAndEnrollments(searchTerm)}
+            onClick={() => {
+              setError('');
+              setLoading(true);
+              fetchCoursesAndEnrollments(searchTerm, currentPage, ordering);
+            }}
             className="px-4 py-2 bg-rose-600 text-white text-sm font-semibold rounded-xl hover:bg-rose-700 transition-colors"
           >
             Thử lại
@@ -238,16 +218,52 @@ const CourseListPage = () => {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredCourses.map((course) => (
-            <CourseCard
-              key={course.id}
-              course={course}
-              isEnrolled={enrolledCourseIds.has(course.id)}
-              onEnroll={handleEnroll}
-            />
-          ))}
-        </div>
+        <>
+          <div className="overflow-hidden border-y border-slate-300 bg-white">
+            <div className="hidden grid-cols-[6rem_minmax(0,2fr)_minmax(10rem,1fr)_8rem] gap-4 bg-slate-100 px-5 py-3 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600 md:grid">
+              <span>Mã</span><span>Khóa học</span><span>Giảng viên</span><span className="text-right">Truy cập</span>
+            </div>
+            <ul className="divide-y divide-slate-200">
+              {filteredCourses.map((course) => (
+                <li key={course.id} className="grid gap-3 px-4 py-4 transition-colors hover:bg-emerald-50/40 sm:px-5 md:grid-cols-[6rem_minmax(0,2fr)_minmax(10rem,1fr)_8rem] md:items-center md:gap-4">
+                  <span className="text-xs font-medium tabular-nums text-slate-500">LS-{String(course.id).padStart(4, '0')}</span>
+                  <div className="min-w-0">
+                    <h2 className="truncate text-sm font-semibold text-slate-950">{course.title}</h2>
+                    <p className="mt-1 line-clamp-1 text-xs text-slate-600">{course.description || 'Chưa có mô tả.'}</p>
+                    {enrolledCourseIds.has(course.id) && <span className="mt-2 inline-block text-[10px] font-semibold uppercase tracking-wide text-emerald-800">Đã đăng ký</span>}
+                  </div>
+                  <span className="text-xs text-slate-600">{course.instructor_username || 'Giảng viên LingoSphere'}</span>
+                  <Link to={`/courses/${course.id}`} className="inline-flex min-h-10 items-center justify-center border border-emerald-800 px-3 text-xs font-semibold text-emerald-900 transition-colors hover:bg-emerald-800 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-800">
+                    Xem chi tiết
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-200 pt-4 sm:flex-row">
+            <p className="text-xs text-slate-500">
+              Trang {currentPage} / {totalPages} · {totalCourses} khóa học
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handlePageChange(currentPage - 1)}
+                disabled={currentPage <= 1 || loading}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-white disabled:opacity-40"
+              >
+                Trước
+              </button>
+              <button
+                type="button"
+                onClick={() => handlePageChange(currentPage + 1)}
+                disabled={currentPage >= totalPages || loading}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-white disabled:opacity-40"
+              >
+                Tiếp
+              </button>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

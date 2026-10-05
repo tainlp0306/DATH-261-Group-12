@@ -27,6 +27,7 @@ import {
   Trash2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import AdminReportsLogs from '../components/AdminReportsLogs';
 
 const AdminDashboardPage = () => {
   const { user: currentUser } = useAuth();
@@ -116,7 +117,6 @@ const AdminDashboardPage = () => {
       const updated = await courseApi.updateCourse(course.id, {
         title: course.title,
         description: course.description,
-        requirements: course.requirements || '',
         is_published: !course.is_published,
       });
       setCourses((prev) =>
@@ -319,6 +319,24 @@ const AdminDashboardPage = () => {
           }`}
         >
           <BookOpen className="w-4 h-4" /> Toàn bộ Khóa học ({courses.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('reports')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all shrink-0 cursor-pointer ${
+            activeTab === 'reports' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <AlertCircle className="w-4 h-4" /> Báo cáo
+        </button>
+
+        <button
+          onClick={() => setActiveTab('logs')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all shrink-0 cursor-pointer ${
+            activeTab === 'logs' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <Activity className="w-4 h-4" /> Nhật ký hệ thống
         </button>
       </div>
 
@@ -714,6 +732,7 @@ const AdminDashboardPage = () => {
           )}
         </div>
       )}
+      <AdminReportsLogs activeTab={activeTab} />
     </div>
   );
 };

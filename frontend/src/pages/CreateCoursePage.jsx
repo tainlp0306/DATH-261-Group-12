@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { courseApi } from '../api/courseApi';
 import { 
@@ -23,7 +23,8 @@ const CreateCoursePage = () => {
   // Form State: Course Basic Info
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
-  const [requirements, setRequirements] = useState('');
+  const [prerequisiteOptions, setPrerequisiteOptions] = useState([]);
+  const [selectedPrerequisites, setSelectedPrerequisites] = useState([]);
   const [isPublished, setIsPublished] = useState(true);
   const [courseLoading, setCourseLoading] = useState(false);
   const [createdCourse, setCreatedCourse] = useState(null);
@@ -40,6 +41,7 @@ const CreateCoursePage = () => {
   const [lessonType, setLessonType] = useState('text');
   const [lessonContent, setLessonContent] = useState('');
   const [mediaUrl, setMediaUrl] = useState('');
+  const [lessonAttachment, setLessonAttachment] = useState(null);
   const [lessonOrder, setLessonOrder] = useState(1);
   const [lessonLoading, setLessonLoading] = useState(false);
 
@@ -50,6 +52,16 @@ const CreateCoursePage = () => {
     setToastMessage({ message, type });
     setTimeout(() => setToastMessage(null), 4000);
   };
+
+  useEffect(() => {
+    let active = true;
+    courseApi.getPrerequisiteOptions()
+      .then((options) => {
+        if (active) setPrerequisiteOptions(Array.isArray(options) ? options : options.results || []);
+      })
+      .catch(() => showToast('Không thể tải danh sách khóa học tiên quyết.', 'error'));
+    return () => { active = false; };
+  }, []);
 
   // Step 1: Create Course
   const handleCreateCourse = async (e) => {
@@ -64,7 +76,7 @@ const CreateCoursePage = () => {
       const res = await courseApi.createCourse({
         title,
         description,
-        requirements,
+        prerequisites: selectedPrerequisites,
         is_published: isPublished,
       });
 
@@ -122,6 +134,7 @@ const CreateCoursePage = () => {
         lesson_type: lessonType,
         content: lessonContent,
         media_url: mediaUrl,
+        attached_file: lessonAttachment,
         order: Number(lessonOrder) || 1,
       });
 
@@ -141,6 +154,7 @@ const CreateCoursePage = () => {
       setLessonTitle('');
       setLessonContent('');
       setMediaUrl('');
+      setLessonAttachment(null);
       setLessonOrder(1);
       showToast(`Đã thêm bài học "${newLesson.title}" vào chương!`, 'success');
     } catch (err) {
@@ -240,19 +254,22 @@ const CreateCoursePage = () => {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5">
-                  Yêu cầu đầu vào (Requirements)
-                </label>
-                <textarea
-                  rows={2}
-                  disabled={!!createdCourse}
-                  value={requirements}
-                  onChange={(e) => setRequirements(e.target.value)}
-                  placeholder="VD: Kiến thức cơ bản về HTML/CSS/JavaScript..."
-                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:bg-white disabled:bg-slate-100 disabled:text-slate-500 transition-all"
-                />
-              </div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600">
+                Khóa học tiên quyết
+                <select
+                  multiple
+                  size={Math.min(Math.max(prerequisiteOptions.length, 3), 6)}
+                  disabled={!!createdCourse || prerequisiteOptions.length === 0}
+                  value={selectedPrerequisites.map(String)}
+                  onChange={(event) => setSelectedPrerequisites(Array.from(event.target.selectedOptions, (option) => Number(option.value)))}
+                  className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white p-2 text-sm normal-case font-normal focus:outline-none focus:ring-2 focus:ring-emerald-700 disabled:bg-slate-100"
+                >
+                  {prerequisiteOptions.map((option) => (
+                    <option key={option.id} value={option.id}>{option.title} · {option.instructor_username}</option>
+                  ))}
+                </select>
+                <span className="mt-1 block text-xs font-normal normal-case text-slate-500">Giữ Ctrl (Windows) hoặc Command (Mac) để chọn nhiều khóa.</span>
+              </label>
 
               <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
                 <span className="text-xs font-semibold text-slate-700">Xuất bản khóa học ngay (Publish)</span>
@@ -410,6 +427,28 @@ const CreateCoursePage = () => {
                           className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
                         />
                       </div>
+                    )}
+
+                    {lessonType === 'slide' && (
+                      <label className="block text-[11px] font-bold uppercase text-slate-500">
+                        Tệp slide đính kèm · tối đa 25 MB
+                        <input
+                          type="file"
+                          accept=".pdf,.ppt,.pptx,.key"
+                          onChange={(event) => {
+                            const file = event.target.files?.[0] || null;
+                            if (file && file.size > 25 * 1024 * 1024) {
+                              showToast('Tệp không được vượt quá 25 MB.', 'error');
+                              event.target.value = '';
+                              setLessonAttachment(null);
+                              return;
+                            }
+                            setLessonAttachment(file);
+                          }}
+                          className="mt-1.5 block w-full rounded-lg border border-slate-300 bg-white p-2 text-xs font-normal normal-case file:mr-3 file:border-0 file:bg-emerald-100 file:px-3 file:py-1.5 file:font-semibold file:text-emerald-900"
+                        />
+                        {lessonAttachment && <span className="mt-1 block normal-case">{lessonAttachment.name}</span>}
+                      </label>
                     )}
 
                     <div>

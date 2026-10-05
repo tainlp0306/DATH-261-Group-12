@@ -62,7 +62,6 @@ const InstructorCoursesPage = () => {
       const updated = await courseApi.updateCourse(course.id, {
         title: course.title,
         description: course.description,
-        requirements: course.requirements || '',
         is_published: !course.is_published,
       });
       setCourses((prev) =>
