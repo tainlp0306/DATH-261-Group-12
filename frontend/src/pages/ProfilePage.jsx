@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Award, BookOpen, CalendarDays, Clock3, UserRound } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { courseApi } from '../api/courseApi';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, normalizeRole } from '../context/AuthContext';
 
 const weekPreview = [
   { day: 'T2', height: '28%' },
@@ -16,12 +16,13 @@ const weekPreview = [
 
 const ProfilePage = () => {
   const { user } = useAuth();
+  const currentRole = normalizeRole(user?.role);
   const [activeTab, setActiveTab] = useState('completed');
   const [completedCourses, setCompletedCourses] = useState([]);
   const [loadingCourses, setLoadingCourses] = useState(false);
 
   useEffect(() => {
-    if (user?.role !== 'learner') return;
+    if (currentRole !== 'learner') return;
     let active = true;
     courseApi.getMyEnrollments()
       .then(async (enrollments) => {
@@ -42,7 +43,7 @@ const ProfilePage = () => {
         if (active) setLoadingCourses(false);
       });
     return () => { active = false; };
-  }, [user?.role]);
+  }, [currentRole]);
 
   const joinedDate = user?.date_joined
     ? new Date(user.date_joined).toLocaleDateString('vi-VN', { day: 'numeric', month: 'long', year: 'numeric' })

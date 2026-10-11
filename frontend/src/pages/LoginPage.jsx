@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, normalizeRole } from '../context/AuthContext';
 import { GoogleLogin } from '@react-oauth/google';
 import { BookOpen, Lock, User, Eye, EyeOff, ArrowRight, AlertCircle } from 'lucide-react';
 
@@ -17,10 +17,14 @@ const LoginPage = () => {
 
   const from = location.state?.from?.pathname;
 
-  const landingPath = (authenticatedUser) => from || (
-    authenticatedUser.role === 'learner' ? '/my-courses' :
-      authenticatedUser.role === 'admin' ? '/admin' : '/courses'
-  );
+  const landingPath = (authenticatedUser) => {
+    const normalizedRole = normalizeRole(authenticatedUser?.role);
+    return from || (
+      normalizedRole === 'learner' ? '/my-courses' :
+        normalizedRole === 'admin' ? '/admin' :
+          normalizedRole === 'instructor' ? '/instructor/courses' : '/courses'
+    );
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();

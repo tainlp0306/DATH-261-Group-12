@@ -5,7 +5,6 @@ import { courseApi } from '../api/courseApi';
 import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 import LessonComments from '../components/LessonComments';
-import QuizModal from '../components/QuizModal';
 import CourseAssignments from '../components/CourseAssignments';
 import LessonPagination from '../components/LessonPagination';
 import {
@@ -23,8 +22,6 @@ import {
   Award,
   Layers,
   AlertCircle,
-  HelpCircle,
-  Clock,
 } from 'lucide-react';
 
 const getYoutubeEmbedUrl = (mediaUrl, startPosition = 0) => {
@@ -70,10 +67,6 @@ const CourseDetailPage = () => {
   const videoPlayerRef = useRef(null);
   const lessonRequestRef = useRef(0);
 
-  // Quizzes state
-  const [quizzes, setQuizzes] = useState([]);
-  const [activeQuizModal, setActiveQuizModal] = useState(null);
-
   useEffect(() => {
     const fetchCourseData = async () => {
       try {
@@ -94,18 +87,6 @@ const CourseDetailPage = () => {
           : Promise.resolve(null);
         const data = await courseApi.getCourseDetail(id);
         setCourse(data);
-
-        // Fetch Quizzes for this course if available
-        if (data.quizzes && Array.isArray(data.quizzes)) {
-          setQuizzes(data.quizzes);
-        } else {
-          try {
-            const courseQuizzes = await courseApi.getCourseQuizzes(id);
-            setQuizzes(Array.isArray(courseQuizzes) ? courseQuizzes : []);
-          } catch (e) {
-            console.warn('Could not load course quizzes directly:', e);
-          }
-        }
 
         // Check enrollment status and restore progress from backend
         if (isAuthenticated) {
@@ -358,12 +339,6 @@ const CourseDetailPage = () => {
               <BookOpen className="w-3.5 h-3.5 text-emerald-500" />
               {totalLessonsCount} bài học
             </span>
-            {quizzes.length > 0 && (
-              <span className="flex items-center gap-1">
-                <HelpCircle className="w-3.5 h-3.5 text-amber-500" />
-                {quizzes.length} bài kiểm tra
-              </span>
-            )}
           </div>
         </div>
 
@@ -388,7 +363,7 @@ const CourseDetailPage = () => {
 
       {/* Main Learning Workspace */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Side: Module & Lesson Curriculum Accordions + Quizzes (4 cols) */}
+        {/* Left Side: Module & Lesson Curriculum Accordions (4 cols) */}
         <div className="lg:col-span-4 space-y-4">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
             <div className="p-4 border-b border-slate-100 bg-slate-50/70">
@@ -487,37 +462,6 @@ const CourseDetailPage = () => {
             </div>
           </div>
 
-          {/* Quizzes Sidebar Card */}
-          {quizzes.length > 0 && (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-3">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                <HelpCircle className="w-4 h-4 text-amber-500" />
-                Bài kiểm tra trắc nghiệm ({quizzes.length})
-              </h3>
-              <div className="space-y-2">
-                {quizzes.map((quiz) => (
-                  <div
-                    key={quiz.id}
-                    className="p-3 bg-amber-50/50 rounded-xl border border-amber-200/70 flex items-center justify-between gap-2"
-                  >
-                    <div>
-                      <h4 className="text-xs font-bold text-slate-800 line-clamp-1">{quiz.title}</h4>
-                      <span className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
-                        <Clock className="w-3 h-3" />
-                        {quiz.time_limit_minutes || 15} phút • {quiz.questions?.length || 0} câu hỏi
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => setActiveQuizModal(quiz)}
-                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-900 font-bold text-[11px] rounded-lg shadow-2xs transition-colors shrink-0 cursor-pointer"
-                    >
-                      Làm bài
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Right Side: Active Lesson Viewer & Comments (8 cols) */}
@@ -668,16 +612,6 @@ const CourseDetailPage = () => {
         </div>
       </div>
 
-      {/* Quiz Modal Popup */}
-      {activeQuizModal && (
-        <QuizModal
-          quiz={activeQuizModal}
-          onClose={() => setActiveQuizModal(null)}
-          onCompleted={(res) => {
-            console.log('Quiz completed result:', res);
-          }}
-        />
-      )}
     </div>
   );
 };

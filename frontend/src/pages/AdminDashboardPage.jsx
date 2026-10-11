@@ -26,11 +26,12 @@ import {
   ClipboardList,
   Trash2
 } from 'lucide-react';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, normalizeRole } from '../context/AuthContext';
 import AdminReportsLogs from '../components/AdminReportsLogs';
 
 const AdminDashboardPage = () => {
   const { user: currentUser } = useAuth();
+  const normalizedCurrentUserRole = normalizeRole(currentUser?.role);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'users' | 'courses'
   const [users, setUsers] = useState([]);
   const [courses, setCourses] = useState([]);
@@ -177,7 +178,7 @@ const AdminDashboardPage = () => {
   );
 
   const getRoleBadge = (role) => {
-    switch (role) {
+    switch (normalizeRole(role)) {
       case 'admin':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-rose-100 text-rose-700 border border-rose-200">
@@ -203,7 +204,7 @@ const AdminDashboardPage = () => {
   const statCards = [
     {
       label: 'Tổng Học viên',
-      value: stats?.total_students ?? users.filter((u) => u.role === 'learner').length,
+      value: stats?.total_students ?? users.filter((u) => normalizeRole(u.role) === 'learner').length,
       icon: <Users className="w-6 h-6" />,
       color: 'from-emerald-500 to-teal-600',
       bg: 'bg-emerald-50',
@@ -212,7 +213,7 @@ const AdminDashboardPage = () => {
     },
     {
       label: 'Giảng viên',
-      value: stats?.total_instructors ?? users.filter((u) => u.role === 'instructor').length,
+      value: stats?.total_instructors ?? users.filter((u) => normalizeRole(u.role) === 'instructor').length,
       icon: <GraduationCap className="w-6 h-6" />,
       color: 'from-purple-500 to-indigo-600',
       bg: 'bg-purple-50',
@@ -359,9 +360,9 @@ const AdminDashboardPage = () => {
             ) : (
               <div className="space-y-3">
                 {[
-                  { label: 'Học viên', count: stats?.total_students ?? users.filter(u => u.role === 'learner').length, color: 'bg-emerald-500', total: users.length || 1 },
-                  { label: 'Giảng viên', count: stats?.total_instructors ?? users.filter(u => u.role === 'instructor').length, color: 'bg-purple-500', total: users.length || 1 },
-                  { label: 'Quản trị', count: users.filter(u => u.role === 'admin').length, color: 'bg-rose-500', total: users.length || 1 },
+                  { label: 'Học viên', count: stats?.total_students ?? users.filter(u => normalizeRole(u.role) === 'learner').length, color: 'bg-emerald-500', total: users.length || 1 },
+                  { label: 'Giảng viên', count: stats?.total_instructors ?? users.filter(u => normalizeRole(u.role) === 'instructor').length, color: 'bg-purple-500', total: users.length || 1 },
+                  { label: 'Quản trị', count: users.filter(u => normalizeRole(u.role) === 'admin').length, color: 'bg-rose-500', total: users.length || 1 },
                 ].map((item) => (
                   <div key={item.label} className="space-y-1">
                     <div className="flex justify-between text-xs font-semibold text-slate-700">

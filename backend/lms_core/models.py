@@ -113,14 +113,7 @@ class Quiz(models.Model):
     title = models.CharField(max_length=255)
     time_limit_minutes = models.IntegerField(default=15)
 
-class Question(models.Model):
-    quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name='questions')
-    content = models.TextField()
-    option_a = models.CharField(max_length=255)
-    option_b = models.CharField(max_length=255)
-    option_c = models.CharField(max_length=255)
-    option_d = models.CharField(max_length=255)
-    correct_option = models.CharField(max_length=1)
+
 
 class QuizSubmission(models.Model):
     student = models.ForeignKey(User, on_delete=models.CASCADE)
@@ -165,3 +158,44 @@ class SystemLog(models.Model):
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     action = models.CharField(max_length=255)
     timestamp = models.DateTimeField(auto_now_add=True)
+
+
+class Assignment(models.Model):
+    ASSIGNMENT_TYPES = [('quiz', 'Trắc nghiệm'), ('file', 'Bài tập nộp tệp')]
+    
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='assignments')
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    assignment_type = models.CharField(max_length=20, choices=ASSIGNMENT_TYPES, default='quiz')
+    
+    time_limit_minutes = models.IntegerField(blank=True, null=True) # Dành cho quiz
+    deadline = models.DateTimeField(blank=True, null=True) # Hạn chót nộp bài
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+
+class Question(models.Model):
+    assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE, related_name='questions')
+    content = models.TextField()
+    option_a = models.CharField(max_length=255)
+    option_b = models.CharField(max_length=255)
+    option_c = models.CharField(max_length=255)
+    option_d = models.CharField(max_length=255)
+    correct_option = models.CharField(max_length=1)
+
+class Submission(models.Model):
+    assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE, related_name='submissions')
+    student = models.ForeignKey(User, on_delete=models.CASCADE)
+    
+    submitted_file = models.FileField(upload_to='submissions/files/', blank=True, null=True)
+    
+    score = models.FloatField(blank=True, null=True)
+    feedback = models.TextField(blank=True, null=True)
+    
+    submitted_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        unique_together = ('assignment', 'student')
+
+        
+
+

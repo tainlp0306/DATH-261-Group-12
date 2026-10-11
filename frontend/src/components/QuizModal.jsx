@@ -12,7 +12,7 @@ import {
 import toast from 'react-hot-toast';
 import { courseApi } from '../api/courseApi';
 
-const QuizModal = ({ quiz, onClose, onCompleted }) => {
+const QuizModal = ({ quiz, onClose, onCompleted, submitAnswers = courseApi.submitQuiz }) => {
   const [answers, setAnswers] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
@@ -30,7 +30,7 @@ const QuizModal = ({ quiz, onClose, onCompleted }) => {
     clearInterval(timerRef.current);
     try {
       setSubmitting(true);
-      const res = await courseApi.submitQuiz(quiz.id, answersRef.current);
+      const res = await submitAnswers(quiz.id, answersRef.current);
       setResult(res);
       toast.success('Đã chấm điểm xong!');
       if (onCompleted) {
@@ -253,16 +253,22 @@ const QuizModal = ({ quiz, onClose, onCompleted }) => {
                           const isSelected = selectedOption === opt.key;
 
                           return (
-                            <button
+                            <label
                               key={opt.key}
-                              type="button"
-                              onClick={() => handleSelectOption(q.id, opt.key)}
                               className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left text-xs transition-all cursor-pointer ${
                                 isSelected
                                   ? 'bg-indigo-50 border-indigo-500 text-indigo-900 font-semibold ring-1 ring-indigo-500 shadow-2xs'
                                   : 'bg-slate-50/70 border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300'
                               }`}
                             >
+                              <input
+                                type="radio"
+                                name={`question-${q.id}`}
+                                value={opt.key}
+                                checked={isSelected}
+                                onChange={() => handleSelectOption(q.id, opt.key)}
+                                className="sr-only"
+                              />
                               <span
                                 className={`w-6 h-6 rounded-lg flex items-center justify-center font-bold text-[11px] shrink-0 ${
                                   isSelected
@@ -273,7 +279,7 @@ const QuizModal = ({ quiz, onClose, onCompleted }) => {
                                 {opt.key}
                               </span>
                               <span className="line-clamp-2">{opt.text}</span>
-                            </button>
+                            </label>
                           );
                         })}
                       </div>

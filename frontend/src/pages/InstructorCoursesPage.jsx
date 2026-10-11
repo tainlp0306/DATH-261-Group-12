@@ -38,13 +38,14 @@ const InstructorCoursesPage = () => {
   const fetchInstructorCourses = async () => {
     try {
       setLoading(true);
-      // Fetch all courses (search backend)
       const data = await courseApi.getCourses('');
-      // Filter for this instructor's courses unless user is admin
+      const coursesList = Array.isArray(data) ? data : data?.results || [];
+
       const filtered = isAdmin
-        ? data
-        : data.filter((c) => c.instructor === user?.id || c.instructor_username === user?.username);
-      setCourses(filtered.length > 0 ? filtered : data);
+        ? coursesList
+        : coursesList.filter((c) => c.instructor === user?.id || c.instructor_username === user?.username);
+
+      setCourses(filtered.length > 0 ? filtered : coursesList);
     } catch (err) {
       console.error('Failed to load courses:', err);
       showToast('Không thể tải danh sách khóa học.', 'error');

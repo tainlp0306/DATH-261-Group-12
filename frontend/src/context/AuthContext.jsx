@@ -3,12 +3,32 @@ import { authApi } from '../api/authApi';
 
 const AuthContext = createContext(null);
 
+export const normalizeRole = (value) => {
+  if (typeof value !== 'string') return value || null;
+  return value.trim().toLowerCase();
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
-    const savedUser = localStorage.getItem('user');
-    return savedUser ? JSON.parse(savedUser) : null;
+    try {
+      const savedUser = localStorage.getItem('user');
+      return savedUser ? JSON.parse(savedUser) : null;
+    } catch {
+      return null;
+    }
   });
-  const [role, setRole] = useState(() => localStorage.getItem('role') || null);
+  const [role, setRole] = useState(() => {
+    const savedUser = (() => {
+      try {
+        const raw = localStorage.getItem('user');
+        return raw ? JSON.parse(raw) : null;
+      } catch {
+        return null;
+      }
+    })();
+
+    return normalizeRole(savedUser?.role ?? localStorage.getItem('role'));
+  });
   const [accessToken, setAccessToken] = useState(() => localStorage.getItem('access_token') || null);
   const [loading, setLoading] = useState(true);
 
@@ -19,16 +39,19 @@ export const AuthProvider = ({ children }) => {
       if (token) {
         try {
           const profile = await authApi.getProfile();
+          const normalizedRole = normalizeRole(profile.role);
           setUser(profile);
-          setRole(profile.role);
+          setRole(normalizedRole);
           localStorage.setItem('user', JSON.stringify(profile));
-          localStorage.setItem('role', profile.role);
+          localStorage.setItem('role', normalizedRole);
         } catch (error) {
           console.error('Failed to restore session:', error);
-          // If token invalid, storage will be cleaned by interceptor or here
           setUser(null);
           setRole(null);
           setAccessToken(null);
+          localStorage.removeItem('user');
+          localStorage.removeItem('role');
+          localStorage.removeItem('access_token');
         }
       }
       setLoading(false);
@@ -48,10 +71,11 @@ export const AuthProvider = ({ children }) => {
 
       // Fetch user profile immediately
       const profile = await authApi.getProfile();
+      const normalizedRole = normalizeRole(profile.role);
       setUser(profile);
-      setRole(profile.role);
+      setRole(normalizedRole);
       localStorage.setItem('user', JSON.stringify(profile));
-      localStorage.setItem('role', profile.role);
+      localStorage.setItem('role', normalizedRole);
 
       return { success: true, user: profile };
     } catch (error) {
@@ -70,14 +94,17 @@ export const AuthProvider = ({ children }) => {
       localStorage.setItem('refresh_token', tokens.refresh);
       setAccessToken(tokens.access);
       const profile = await authApi.getProfile();
+      const normalizedRole = normalizeRole(profile.role);
       setUser(profile);
-      setRole(profile.role);
+      setRole(normalizedRole);
       localStorage.setItem('user', JSON.stringify(profile));
-      localStorage.setItem('role', profile.role);
+      localStorage.setItem('role', normalizedRole);
       return { success: true, user: profile };
     } catch (error) {
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
+      localStorage.removeItem('user');
+      localStorage.removeItem('role');
       setAccessToken(null);
       return {
         success: false,
@@ -133,14 +160,16 @@ export const AuthProvider = ({ children }) => {
     setAccessToken(null);
   };
 
+  const currentRole = normalizeRole(role || user?.role);
+
   const value = {
     user,
-    role,
+    role: currentRole,
     accessToken,
-    isAuthenticated: !!user && !!accessToken,
-    isInstructor: role === 'instructor' || role === 'admin',
-    isAdmin: role === 'admin',
-    isLearner: role === 'learner',
+    isAuthenticated: Boolean(accessToken) && Boolean(user || currentRole),
+    isInstructor: currentRole === 'instructor' || currentRole === 'admin',
+    isAdmin: currentRole === 'admin',
+    isLearner: currentRole === 'learner',
     loading,
     login,
     loginWithGoogle,

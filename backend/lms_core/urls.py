@@ -18,6 +18,7 @@ from .views import (
     AdminReportListView, AdminReportDetailView, AdminLogListView,
     OTPRequestView, PasswordOTPConfirmView,
     RegistrationOTPRequestView, RegistrationOTPConfirmView,
+    SubmitAssignmentView, CourseAssignmentListCreateView, AssignmentSubmissionListView,
 )
 
 urlpatterns = [
@@ -73,4 +74,7 @@ urlpatterns = [
     path('admin/reports/', AdminReportListView.as_view(), name='admin_reports'),
     path('admin/reports/<int:pk>/', AdminReportDetailView.as_view(), name='admin_report_detail'),
     path('admin/logs/', AdminLogListView.as_view(), name='admin_logs'),
+    path('courses/<int:course_id>/assignments/', CourseAssignmentListCreateView.as_view(), name='course_assignments'),
+    path('assignments/<int:assignment_id>/submit/', SubmitAssignmentView.as_view(), name='submit_assignment'),
+    path('assignments/<int:assignment_id>/submissions/', AssignmentSubmissionListView.as_view(), name='assignment_submissions'),
 ]

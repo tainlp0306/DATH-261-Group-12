@@ -77,6 +77,28 @@ export const courseApi = {
     return response.data;
   },
 
+  getCourseAssignments: async (courseId) => {
+    const response = await api.get(`courses/${courseId}/assignments/`);
+    return response.data;
+  },
+
+  getAssignmentSubmissions: async (assignmentId) => {
+    const response = await api.get(`assignments/${assignmentId}/submissions/`);
+    return response.data;
+  },
+
+  createCourseAssignment: async (courseId, assignment) => {
+    const response = await api.post(`courses/${courseId}/assignments/`, assignment);
+    return response.data;
+  },
+
+  submitAssignment: async (assignmentId, submission) => {
+    const response = await api.post(`assignments/${assignmentId}/submit/`, submission, {
+      headers: submission instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : undefined,
+    });
+    return response.data;
+  },
+
   createCourseTest: async (courseId, testData) => {
     const response = await api.post(`courses/${courseId}/tests/`, testData);
     return response.data;
@@ -96,8 +118,10 @@ export const courseApi = {
     return response.data;
   },
 
-  gradeSubmission: async (submissionId, grade) => {
-    const response = await api.patch(`submissions/${submissionId}/grade/`, grade);
+  gradeSubmission: async (submissionId, grade, type = 'test') => {
+    const response = await api.patch(`submissions/${submissionId}/grade/`, grade, {
+      params: { type },
+    });
     return response.data;
   },
 

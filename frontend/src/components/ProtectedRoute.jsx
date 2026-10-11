@@ -1,11 +1,12 @@
 import React from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, normalizeRole } from '../context/AuthContext';
 import LoadingSpinner from './LoadingSpinner';
 
 const ProtectedRoute = ({ children, allowedRoles = [] }) => {
-  const { role, isAuthenticated, loading } = useAuth();
+  const { role, user, isAuthenticated, loading } = useAuth();
   const location = useLocation();
+  const currentRole = normalizeRole(role ?? user?.role);
 
   if (loading) {
     return (
@@ -19,7 +20,7 @@ const ProtectedRoute = ({ children, allowedRoles = [] }) => {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
-  if (allowedRoles.length > 0 && !allowedRoles.includes(role)) {
+  if (allowedRoles.length > 0 && !allowedRoles.includes(currentRole)) {
     return <Navigate to="/unauthorized" replace />;
   }
 

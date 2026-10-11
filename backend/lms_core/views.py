@@ -29,12 +29,13 @@ from .serializers import (
     LessonSerializer, EnrollmentSerializer, LessonProgressSerializer,
     CommentSerializer, QuizSerializer, QuestionSerializer, TestSerializer,
     TestSubmissionSerializer, NotificationSerializer, ReportSerializer,
-    AdminLogSerializer,
+    AdminLogSerializer, AssignmentSerializer, SubmissionSerializer,
 )
 from .permissions import IsAdmin, IsInstructor, IsInstructorOrAdmin
 from .models import (
     AdminLog, Comment, Course, EmailOTP, Enrollment, Lesson, LessonProgress, Module,
     Notification, Quiz, Question, QuizSubmission, Report, Test, TestSubmission, User,
+    Assignment, Submission,
 )
 
 User = get_user_model()
@@ -354,6 +355,18 @@ class InstructorCourseOptionsView(generics.ListAPIView):
 class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Course.objects.all()
     serializer_class = CourseSerializer
+
+    def get_queryset(self):
+        queryset = Course.objects.select_related('instructor').prefetch_related('modules__lessons')
+        user = self.request.user
+        if not user.is_authenticated:
+            return queryset.filter(is_published=True)
+        if user.role == 'admin':
+            return queryset
+        visible_courses = Q(is_published=True) | Q(enrollments__student=user)
+        if user.role == 'instructor':
+            visible_courses |= Q(instructor=user)
+        return queryset.filter(visible_courses).distinct()
 
     def get_serializer_class(self):
         if self.request.method in ('GET', 'HEAD', 'OPTIONS') and getattr(self.request.user, 'role', None) not in ('instructor', 'admin'):
@@ -710,7 +723,36 @@ class GradeSubmissionView(APIView):
     permission_classes = [IsAuthenticated]
 
     def patch(self, request, submission_id):
-        from django.shortcuts import get_object_or_404
+        if request.query_params.get('type') == 'assignment':
+            submission = get_object_or_404(
+                Submission.objects.select_related('assignment__course', 'student'), pk=submission_id
+            )
+            if request.user.role != 'admin' and not (
+                request.user.role == 'instructor'
+                and submission.assignment.course.instructor_id == request.user.id
+            ):
+                return Response({'error': 'Bạn không có quyền chấm bài này.'}, status=status.HTTP_403_FORBIDDEN)
+            if 'score' not in request.data and 'feedback' not in request.data:
+                return Response({'error': 'Cần cung cấp score hoặc feedback.'}, status=status.HTTP_400_BAD_REQUEST)
+            if 'score' in request.data:
+                try:
+                    score = float(request.data['score'])
+                except (TypeError, ValueError):
+                    return Response({'score': ['Điểm phải là một số.']}, status=status.HTTP_400_BAD_REQUEST)
+                if not 0 <= score <= 10:
+                    return Response({'score': ['Điểm phải nằm trong khoảng 0 đến 10.']}, status=status.HTTP_400_BAD_REQUEST)
+                submission.score = score
+            if 'feedback' in request.data:
+                submission.feedback = str(request.data['feedback'])
+            submission.save(update_fields=['score', 'feedback'])
+            Notification.objects.create(
+                user=submission.student,
+                title='Bài tập đã được chấm',
+                message=f'Bài tập "{submission.assignment.title}" đã được chấm điểm.',
+                course=submission.assignment.course,
+            )
+            return Response(SubmissionSerializer(submission, context={'request': request}).data)
+
         submission = get_object_or_404(TestSubmission.objects.select_related('test__course'), pk=submission_id)
         if request.user.role != 'admin' and not (
             request.user.role == 'instructor' and submission.test.course.instructor_id == request.user.id
@@ -829,4 +871,104 @@ class AdminLogListView(generics.ListAPIView):
     permission_classes = [IsAdmin]
     pagination_class = None
     queryset = AdminLog.objects.select_related('admin').order_by('-created_at')
+
+class CourseAssignmentListCreateView(generics.ListCreateAPIView):
+    serializer_class = AssignmentSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+    def get_course(self):
+        return get_object_or_404(Course, pk=self.kwargs['course_id'])
+
+    def get_queryset(self):
+        course = self.get_course()
+        user = self.request.user
+        is_owner = course.instructor_id == user.id
+        if user.role == 'admin' or is_owner:
+            return Assignment.objects.filter(course=course).prefetch_related('questions').order_by('created_at')
+        if user.role == 'learner' and Enrollment.objects.filter(student=user, course=course).exists():
+            return Assignment.objects.filter(course=course).prefetch_related('questions').order_by('created_at')
+        from rest_framework.exceptions import PermissionDenied
+        raise PermissionDenied('Bạn cần đăng ký khóa học hoặc là giảng viên phụ trách.')
+
+    def create(self, request, *args, **kwargs):
+        course = self.get_course()
+        if request.user.role != 'admin' and not (
+            request.user.role == 'instructor' and course.instructor_id == request.user.id
+        ):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Bạn không có quyền tạo bài tập cho khóa học này.')
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save(course=course)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class AssignmentSubmissionListView(generics.ListAPIView):
+    serializer_class = SubmissionSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+    def get_queryset(self):
+        assignment = get_object_or_404(
+            Assignment.objects.select_related('course'), pk=self.kwargs['assignment_id']
+        )
+        user = self.request.user
+        if user.role == 'admin' or (
+            user.role == 'instructor' and assignment.course.instructor_id == user.id
+        ):
+            return Submission.objects.filter(assignment=assignment).select_related('student').order_by('-submitted_at')
+        if user.role == 'learner' and Enrollment.objects.filter(student=user, course=assignment.course).exists():
+            return Submission.objects.filter(assignment=assignment, student=user).select_related('student')
+        from rest_framework.exceptions import PermissionDenied
+        raise PermissionDenied('Bạn không có quyền xem bài nộp này.')
+
+
+class SubmitAssignmentView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
+
+    def post(self, request, assignment_id):
+        assignment = get_object_or_404(Assignment.objects.select_related('course'), pk=assignment_id)
+        if request.user.role != 'learner':
+            return Response({'error': 'Chỉ học viên mới được nộp bài.'}, status=status.HTTP_403_FORBIDDEN)
+        if not Enrollment.objects.filter(student=request.user, course=assignment.course).exists():
+            return Response({'error': 'Bạn cần đăng ký khóa học trước khi nộp bài.'}, status=status.HTTP_403_FORBIDDEN)
+        if assignment.deadline and timezone.now() > assignment.deadline:
+            return Response({'error': 'Đã quá hạn nộp bài!'}, status=status.HTTP_400_BAD_REQUEST)
+
+        if assignment.assignment_type == 'quiz':
+            answers = request.data.get('answers', {})
+            if not isinstance(answers, dict):
+                return Response({'answers': ['Câu trả lời phải là một object.']}, status=status.HTTP_400_BAD_REQUEST)
+            questions = list(assignment.questions.all())
+            if not questions:
+                return Response({'error': 'Bài trắc nghiệm chưa có câu hỏi.'}, status=status.HTTP_400_BAD_REQUEST)
+            correct_count = sum(
+                1 for question in questions
+                if str(answers.get(str(question.id), '')).upper() == question.correct_option.upper()
+            )
+            score = round(correct_count / len(questions) * 10, 2)
+            submission, _ = Submission.objects.update_or_create(
+                assignment=assignment,
+                student=request.user,
+                defaults={'score': score, 'feedback': 'Hệ thống chấm tự động'},
+            )
+            return Response({
+                'id': submission.id,
+                'message': 'Nộp bài thành công.',
+                'score': score,
+                'correct_count': correct_count,
+                'total_questions': len(questions),
+            }, status=status.HTTP_200_OK)
+
+        uploaded_file = request.FILES.get('file') or request.FILES.get('submitted_file')
+        if not uploaded_file:
+            return Response({'file': ['Vui lòng đính kèm tệp.']}, status=status.HTTP_400_BAD_REQUEST)
+        submission, _ = Submission.objects.update_or_create(
+            assignment=assignment,
+            student=request.user,
+            defaults={'submitted_file': uploaded_file, 'score': None, 'feedback': ''},
+        )
+        return Response(SubmissionSerializer(submission, context={'request': request}).data, status=status.HTTP_200_OK)
 

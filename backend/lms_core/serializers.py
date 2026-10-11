@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model
 from .models import (
     AdminLog, Comment, Course, Enrollment, Lesson, LessonProgress, Module,
     LessonPage, Notification, Question, Quiz, QuizSubmission, Report, Test, TestSubmission,
+    Assignment, Submission
 )
 
 User = get_user_model()
@@ -80,7 +81,6 @@ class QuizSerializer(serializers.ModelSerializer):
 class CourseSerializer(serializers.ModelSerializer):
     instructor_username = serializers.ReadOnlyField(source='instructor.username')
     modules = ModuleSerializer(many=True, read_only=True)
-    quizzes = QuizSerializer(many=True, read_only=True)
     prerequisites = serializers.PrimaryKeyRelatedField(many=True, queryset=Course.objects.all(), required=False)
 
     class Meta:
@@ -88,7 +88,7 @@ class CourseSerializer(serializers.ModelSerializer):
         fields = (
             'id', 'title', 'description', 'prerequisites',
             'instructor', 'instructor_username', 'is_published', 
-            'created_at', 'modules', 'quizzes'
+            'created_at', 'modules'
         )
         read_only_fields = ('instructor',)
 
@@ -187,6 +187,57 @@ class AdminLogSerializer(serializers.ModelSerializer):
         model = AdminLog
         fields = ('id', 'admin', 'admin_username', 'action', 'created_at')
 
+class QuestionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Question
+        fields = ['id', 'content', 'option_a', 'option_b', 'option_c', 'option_d'] 
+
+class AssignmentQuestionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Question
+        fields = ['id', 'content', 'option_a', 'option_b', 'option_c', 'option_d', 'correct_option']
+        read_only_fields = ['id']
+        extra_kwargs = {'correct_option': {'write_only': True}}
+
+    def validate_correct_option(self, value):
+        normalized = value.upper()
+        if normalized not in ('A', 'B', 'C', 'D'):
+            raise serializers.ValidationError('Đáp án đúng phải là A, B, C hoặc D.')
+        return normalized
+
+
+class AssignmentSerializer(serializers.ModelSerializer):
+    questions = AssignmentQuestionSerializer(many=True, required=False)
+
+    class Meta:
+        model = Assignment
+        fields = ['id', 'course', 'title', 'description', 'assignment_type', 'time_limit_minutes', 'deadline', 'questions', 'created_at']
+        read_only_fields = ['id', 'course', 'created_at']
+
+    def validate(self, attrs):
+        assignment_type = attrs.get('assignment_type', getattr(self.instance, 'assignment_type', 'quiz'))
+        questions = attrs.get('questions', [])
+        if assignment_type == 'quiz' and not questions and self.instance is None:
+            raise serializers.ValidationError({'questions': ['Bài trắc nghiệm cần ít nhất một câu hỏi.']})
+        if assignment_type == 'file' and questions:
+            raise serializers.ValidationError({'questions': ['Bài nộp tệp không nhận câu hỏi trắc nghiệm.']})
+        return attrs
+
+    def create(self, validated_data):
+        questions = validated_data.pop('questions', [])
+        assignment = Assignment.objects.create(**validated_data)
+        Question.objects.bulk_create([
+            Question(assignment=assignment, **question) for question in questions
+        ])
+        return assignment
+
+class SubmissionSerializer(serializers.ModelSerializer):
+    student_name = serializers.ReadOnlyField(source='student.username')
+
+    class Meta:
+        model = Submission
+        fields = ['id', 'assignment', 'student', 'student_name', 'submitted_file', 'score', 'feedback', 'submitted_at']
+        read_only_fields = ['student', 'score', 'feedback', 'submitted_at']
 
 
 

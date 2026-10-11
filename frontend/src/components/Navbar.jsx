@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
+import { useAuth, normalizeRole } from '../context/AuthContext';
 import { 
   BookOpen, 
   LogOut, 
@@ -17,6 +17,7 @@ const Navbar = () => {
   const { user, role, isAuthenticated, isInstructor, isAdmin, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
+  const currentRole = normalizeRole(role ?? user?.role);
   const [notifications, setNotifications] = useState([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [headerVisible, setHeaderVisible] = useState(true);
@@ -66,7 +67,7 @@ const Navbar = () => {
   };
 
   const getRoleBadge = (userRole) => {
-    switch (userRole) {
+    switch (normalizeRole(userRole)) {
       case 'instructor':
         return (
           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700 border border-purple-200">
@@ -152,7 +153,7 @@ const Navbar = () => {
                 </Link>
               )}
 
-              {role === 'learner' && (
+              {currentRole === 'learner' && (
                 <Link
                   to="/my-courses"
                   className={`px-3.5 py-2 text-sm font-medium transition-colors ${isActive('/my-courses') ? 'border-b-2 border-emerald-800 text-emerald-900' : 'text-slate-600 hover:text-slate-950'}`}
@@ -247,7 +248,7 @@ const Navbar = () => {
                     <span className="text-sm font-bold text-slate-800">
                       {user?.username}
                     </span>
-                    {getRoleBadge(role)}
+                    {getRoleBadge(currentRole)}
                   </div>
                   {user?.email && (
                     <span className="text-xs text-slate-400 font-normal">
@@ -292,7 +293,7 @@ const Navbar = () => {
         <nav className="flex gap-1 overflow-x-auto border-t border-slate-200 py-2 md:hidden" aria-label="Điều hướng chính">
           <Link to="/" className={mobileLinkClass('/')}>Trang chủ</Link>
           <Link to="/courses" className={mobileLinkClass('/courses')}>Tất cả khóa học</Link>
-          {role === 'learner' && <Link to="/my-courses" className={mobileLinkClass('/my-courses')}>Khóa học của tôi</Link>}
+          {currentRole === 'learner' && <Link to="/my-courses" className={mobileLinkClass('/my-courses')}>Khóa học của tôi</Link>}
           {isAuthenticated && <Link to="/profile" className={mobileLinkClass('/profile')}>Hồ sơ</Link>}
           {isInstructor && <Link to="/instructor/courses" className={mobileLinkClass('/instructor/courses')}>Quản lý khóa học</Link>}
           {isAdmin && <Link to="/admin" className={mobileLinkClass('/admin')}>Admin</Link>}

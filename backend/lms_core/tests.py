@@ -8,7 +8,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
-from .models import AdminLog, Comment, Course, Enrollment, Lesson, LessonProgress, Module, Notification, Report, Test, TestSubmission
+from .models import AdminLog, Assignment, Comment, Course, Enrollment, Lesson, LessonProgress, Module, Notification, Question, Report, Submission, Test, TestSubmission
 
 User = get_user_model()
 
@@ -95,6 +95,26 @@ class NewFeatureApiTests(APITestCase):
 			title='Feature course', description='Course description',
 			instructor=self.instructor, is_published=True,
 		)
+
+	def test_unpublished_course_details_are_private_to_owner_and_enrolled_learners(self):
+		unpublished = Course.objects.create(
+			title='Private draft', description='Not published', instructor=self.instructor,
+			is_published=False,
+		)
+		self.client.force_authenticate(user=None)
+		response = self.client.get(reverse('course_detail', args=[unpublished.pk]))
+		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+		self.client.force_authenticate(self.instructor)
+		response = self.client.get(reverse('course_detail', args=[unpublished.pk]))
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+		self.client.force_authenticate(self.learner)
+		response = self.client.get(reverse('course_detail', args=[unpublished.pk]))
+		self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+		Enrollment.objects.create(student=self.learner, course=unpublished)
+		response = self.client.get(reverse('course_detail', args=[unpublished.pk]))
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
 
 	@override_settings(
 		EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend',
@@ -408,3 +428,78 @@ class NewFeatureApiTests(APITestCase):
 			format='json',
 		)
 		self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class AssignmentAssessmentApiTests(APITestCase):
+	def setUp(self):
+		self.instructor = User.objects.create_user(
+			username='assignment-instructor', password='test-password', role='instructor'
+		)
+		self.learner = User.objects.create_user(
+			username='assignment-learner', password='test-password', role='learner'
+		)
+		self.course = Course.objects.create(
+			title='Assignment course', description='Assessment API course',
+			instructor=self.instructor, is_published=True,
+		)
+
+	def test_instructor_creates_quiz_and_learner_submits_answers_with_history(self):
+		self.client.force_authenticate(self.instructor)
+		response = self.client.post(
+			reverse('course_assignments', args=[self.course.pk]),
+			{
+				'title': 'Chapter quiz',
+				'assignment_type': 'quiz',
+				'time_limit_minutes': 5,
+				'questions': [{
+					'content': 'Choose the correct option',
+					'option_a': 'A', 'option_b': 'B', 'option_c': 'C', 'option_d': 'D',
+					'correct_option': 'B',
+				}],
+			},
+			format='json',
+		)
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertNotIn('correct_option', response.data['questions'][0])
+		assignment = Assignment.objects.get(pk=response.data['id'])
+		question = Question.objects.get(assignment=assignment)
+		Enrollment.objects.create(student=self.learner, course=self.course)
+
+		self.client.force_authenticate(self.learner)
+		response = self.client.post(
+			reverse('submit_assignment', args=[assignment.pk]),
+			{'answers': {str(question.pk): 'B'}},
+			format='json',
+		)
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response.data['score'], 10)
+		response = self.client.get(reverse('assignment_submissions', args=[assignment.pk]))
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response.data[0]['score'], 10)
+
+	def test_file_submission_can_be_graded_on_ten_point_scale(self):
+		assignment = Assignment.objects.create(
+			course=self.course, title='Upload project', assignment_type='file',
+		)
+		Enrollment.objects.create(student=self.learner, course=self.course)
+		self.client.force_authenticate(self.learner)
+		with TemporaryDirectory() as media_root, override_settings(MEDIA_ROOT=media_root):
+			response = self.client.post(
+				reverse('submit_assignment', args=[assignment.pk]),
+				{'file': SimpleUploadedFile('work.txt', b'assignment answer')},
+				format='multipart',
+			)
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		submission = Submission.objects.get(pk=response.data['id'])
+
+		self.client.force_authenticate(self.instructor)
+		response = self.client.patch(
+			reverse('grade_submission', args=[submission.pk]) + '?type=assignment',
+			{'score': 8.5, 'feedback': 'Good work'},
+			format='json',
+		)
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		submission.refresh_from_db()
+		self.assertEqual(submission.score, 8.5)
+		self.assertEqual(submission.feedback, 'Good work')
+		self.assertTrue(Notification.objects.filter(user=self.learner, course=self.course).exists())
