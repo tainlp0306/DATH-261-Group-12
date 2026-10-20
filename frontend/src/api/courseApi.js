@@ -25,6 +25,11 @@ export const courseApi = {
     return response.data;
   },
 
+  getInstructorCourses: async () => {
+    const response = await api.get('instructor/courses/');
+    return response.data;
+  },
+
   sendCourseAnnouncement: async (courseId, announcement) => {
     const response = await api.post(`courses/${courseId}/announcements/`, announcement);
     return response.data;
@@ -202,6 +207,21 @@ export const courseApi = {
   // GET /quizzes/:id/ - Get quiz details
   getQuizDetail: async (quizId) => {
     const response = await api.get(`quizzes/${quizId}/`);
+    return response.data;
+  },
+
+  getCourseVocabulary: async (courseId) => {
+    const response = await api.get(`courses/${courseId}/vocabulary/`);
+    return response.data;
+  },
+
+  createVocabulary: async (courseId, item) => {
+    const response = await api.post(`courses/${courseId}/vocabulary/`, item);
+    return response.data;
+  },
+
+  submitPractice: async (vocabularyId, answer) => {
+    const response = await api.post(`vocabulary/${vocabularyId}/practice/`, { answer });
     return response.data;
   },
 

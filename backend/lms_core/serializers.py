@@ -3,7 +3,7 @@ from django.contrib.auth import get_user_model
 from .models import (
     AdminLog, Comment, Course, Enrollment, Lesson, LessonProgress, Module,
     LessonPage, Notification, Question, Quiz, QuizSubmission, Report, Test, TestSubmission,
-    Assignment, Submission
+    Assignment, Submission, Vocabulary,
 )
 
 User = get_user_model()
@@ -111,6 +111,24 @@ class CourseOutlineSerializer(CourseSerializer):
 
     class Meta(CourseSerializer.Meta):
         fields = CourseSerializer.Meta.fields
+
+class VocabularySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Vocabulary
+        fields = ('id', 'course', 'word', 'meaning', 'romaji', 'kind', 'stroke_data')
+        read_only_fields = ('course',)
+
+    def validate_kind(self, value):
+        if value not in ('typing', 'stroke'):
+            raise serializers.ValidationError('Loại luyện tập không hợp lệ.')
+        return value
+
+    def validate_word(self, value):
+        cleaned = value.strip()
+        if not cleaned:
+            raise serializers.ValidationError('Nội dung luyện tập không được để trống.')
+        return cleaned
+
 
 class EnrollmentSerializer(serializers.ModelSerializer):
     course_title = serializers.ReadOnlyField(source='course.title')

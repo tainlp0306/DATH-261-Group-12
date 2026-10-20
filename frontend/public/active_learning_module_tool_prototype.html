@@ -1,0 +1,1355 @@
+<!DOCTYPE html>
+<html lang="vi" class="h-full bg-slate-900 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LMS Active Learning Module - DATH-261 Group 12</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              800: '#1e40af',
+              900: '#1e3a8a',
+            },
+            japanese: {
+              red: '#e63946',
+              gold: '#ffb703',
+              green: '#2a9d8f'
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+            jp: ['Noto Sans JP', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts: Inter & Noto Sans JP -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <!-- Hanzi Writer CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/hanzi-writer@3.5/dist/hanzi-writer.min.js"></script>
+
+  <!-- Canvas Confetti CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    /* Tianzige Canvas Grid Pattern */
+    .tianzige-bg {
+      background-size: 100% 100%;
+      background-image: 
+        linear-gradient(to right, rgba(239, 68, 68, 0.25) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(239, 68, 68, 0.25) 1px, transparent 1px);
+    }
+
+    /* Key press bounce effect */
+    .key-btn:active {
+      transform: scale(0.92);
+    }
+  </style>
+</head>
+<body class="h-full font-sans antialiased bg-slate-950 text-slate-100 flex flex-col">
+
+  <!-- TOP HEADER / LMS BAR -->
+  <header class="bg-slate-900 border-b border-slate-800 px-4 py-3 sticky top-0 z-50 shadow-md">
+    <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
+      
+      <!-- Brand & Module Tag -->
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 to-blue-500 flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-indigo-500/30">
+          あ
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <h1 class="font-bold text-lg text-white leading-none">Active Learning Module</h1>
+            <span class="px-2 py-0.5 text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-full">Standalone Plugin</span>
+          </div>
+          <p class="text-xs text-slate-400 mt-0.5">Hệ thống LMS DATH-261 Group 12 • Học tiếng Nhật chủ động</p>
+        </div>
+      </div>
+
+      <!-- Live Session Stats Quick Bar -->
+      <div class="flex items-center space-x-4 bg-slate-950/60 border border-slate-800/80 px-3 py-1.5 rounded-lg text-xs">
+        <div class="flex items-center space-x-1.5 text-amber-400">
+          <i data-lucide="zap" class="w-4 h-4"></i>
+          <span>Streak: <strong id="global-streak">5 ngày</strong></span>
+        </div>
+        <div class="h-3 w-px bg-slate-800"></div>
+        <div class="flex items-center space-x-1.5 text-emerald-400">
+          <i data-lucide="award" class="w-4 h-4"></i>
+          <span>Điểm: <strong id="global-score">1,250 XP</strong></span>
+        </div>
+        <div class="h-3 w-px bg-slate-800"></div>
+        <div class="flex items-center space-x-1.5 text-sky-400">
+          <i data-lucide="clock" class="w-4 h-4"></i>
+          <span id="global-timer">00:00</span>
+        </div>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- NAVIGATION TABS BAR -->
+  <nav class="bg-slate-900/80 border-b border-slate-800 backdrop-blur sticky top-[61px] z-40">
+    <div class="max-w-7xl mx-auto px-4 flex space-x-1 overflow-x-auto no-scrollbar">
+      <button onclick="switchTab('typing')" id="tab-btn-typing" class="tab-btn flex items-center space-x-2 px-4 py-3 text-sm font-medium border-b-2 border-indigo-500 text-indigo-400 whitespace-nowrap transition-colors">
+        <i data-lucide="keyboard" class="w-4 h-4"></i>
+        <span>1. Gõ câu (Typing)</span>
+      </button>
+      <button onclick="switchTab('canvas')" id="tab-btn-canvas" class="tab-btn flex items-center space-x-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 whitespace-nowrap transition-colors">
+        <i data-lucide="pen-tool" class="w-4 h-4"></i>
+        <span>2. Vẽ nét chữ (Stroke Canvas)</span>
+      </button>
+      <button onclick="switchTab('benchmark')" id="tab-btn-benchmark" class="tab-btn flex items-center space-x-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 whitespace-nowrap transition-colors">
+        <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
+        <span>3. Nghiên cứu Thư viện (Benchmark)</span>
+      </button>
+      <button onclick="switchTab('arch')" id="tab-btn-arch" class="tab-btn flex items-center space-x-2 px-4 py-3 text-sm font-medium border-b-2 border-transparent text-slate-400 hover:text-slate-200 whitespace-nowrap transition-colors">
+        <i data-lucide="cpu" class="w-4 h-4"></i>
+        <span>4. Kiến trúc Module LMS</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- MAIN CONTAINER -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 overflow-y-auto">
+
+    <!-- ================= TAB 1: TYPING PRACTICE ================= -->
+    <section id="tab-typing" class="tab-content block space-y-6">
+      
+      <!-- Top info banner -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 class="text-xl font-bold text-white flex items-center gap-2">
+            <span>Luyện gõ câu tiếng Nhật</span>
+            <span class="text-xs font-normal px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Romaji Auto Converter</span>
+          </h2>
+          <p class="text-sm text-slate-400 mt-1">Gõ trực tiếp bằng Romaji (ví dụ: <code class="text-amber-300 bg-slate-800 px-1 rounded">wa</code> &rarr; <span class="text-emerald-400 font-jp">わ</span>) hoặc dùng Bàn phím ảo Kana bên dưới.</p>
+        </div>
+
+        <!-- Sentence selector dropdown -->
+        <div class="flex items-center space-x-3">
+          <label class="text-xs text-slate-400 font-medium whitespace-nowrap">Chọn câu:</label>
+          <select id="sentence-select" onchange="loadSelectedSentence()" class="bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+            <option value="0">Câu 1: わたしはだいがくせいです (Dễ)</option>
+            <option value="1">Câu 2: はじめまして、よろしくおねがいします (Trung bình)</option>
+            <option value="2">Câu 3: きょうはとてもいいてんきですね (Trung bình)</option>
+            <option value="3">Câu 4: にほんごのべんきょうはたのしいです (Khó)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Real-time Typing Playground -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl relative overflow-hidden">
+        
+        <!-- Live performance metrics banner -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 bg-slate-950/80 p-4 rounded-xl border border-slate-800">
+          <div class="text-center">
+            <div class="text-xs text-slate-400 uppercase tracking-wider">Tốc độ (WPM)</div>
+            <div id="stat-wpm" class="text-2xl font-bold text-indigo-400 mt-0.5">0</div>
+          </div>
+          <div class="text-center">
+            <div class="text-xs text-slate-400 uppercase tracking-wider">Độ chính xác</div>
+            <div id="stat-accuracy" class="text-2xl font-bold text-emerald-400 mt-0.5">100%</div>
+          </div>
+          <div class="text-center">
+            <div class="text-xs text-slate-400 uppercase tracking-wider">Số lỗi (Errors)</div>
+            <div id="stat-errors" class="text-2xl font-bold text-rose-400 mt-0.5">0</div>
+          </div>
+          <div class="text-center">
+            <div class="text-xs text-slate-400 uppercase tracking-wider">Chuỗi đúng (Streak)</div>
+            <div id="stat-typing-streak" class="text-2xl font-bold text-amber-400 mt-0.5">0</div>
+          </div>
+        </div>
+
+        <!-- Target Sentence Display Card -->
+        <div class="bg-slate-950 border border-slate-800/90 rounded-xl p-6 text-center space-y-4 shadow-inner">
+          
+          <!-- Furigana Kanji Hint -->
+          <div id="display-furigana" class="text-base font-jp text-slate-400 tracking-wider">
+            <!-- Dynamic Furigana -->
+          </div>
+
+          <!-- Main Japanese Target Characters display with Real-time highlight -->
+          <div id="display-target-kana" class="text-2xl md:text-4xl font-jp font-bold tracking-widest min-h-[50px] flex items-center justify-center flex-wrap gap-1 leading-relaxed">
+            <!-- Dynamic character tiles -->
+          </div>
+
+          <!-- Romaji Hint & Vietnamese Translation -->
+          <div class="pt-2 border-t border-slate-800/60 flex flex-col md:flex-row items-center justify-between text-xs text-slate-400 gap-2">
+            <div>
+              <span class="text-slate-500">Gợi ý Romaji:</span> 
+              <span id="display-romaji-hint" class="font-mono text-amber-300 font-semibold ml-1">watashi wa daigakusei desu</span>
+            </div>
+            <div>
+              <span class="text-slate-500">Dịch nghĩa:</span> 
+              <span id="display-vietnamese" class="text-slate-200 italic ml-1">"Tôi là sinh viên đại học"</span>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Interactive Typing Input Box -->
+        <div class="mt-6 space-y-3">
+          <div class="flex items-center justify-between text-xs text-slate-400">
+            <label for="typing-input" class="font-medium flex items-center gap-1.5">
+              <i data-lucide="edit-3" class="w-4 h-4 text-indigo-400"></i>
+              <span>Nhập văn bản vào đây (Tự động chuyển Romaji &rarr; Hiragana):</span>
+            </label>
+            <div class="flex items-center space-x-2">
+              <span class="text-slate-500">Chế độ gõ:</span>
+              <button onclick="toggleInputMode()" id="mode-toggle-btn" class="px-2.5 py-1 bg-indigo-600/30 text-indigo-300 border border-indigo-500/40 rounded text-xs font-semibold hover:bg-indigo-600/50 transition">
+                Gõ Romaji Auto-Kana
+              </button>
+            </div>
+          </div>
+
+          <div class="relative">
+            <input 
+              type="text" 
+              id="typing-input" 
+              autocomplete="off" 
+              spellcheck="false"
+              placeholder="Gõ ở đây... (vd: wa ta shi wa da i ga ku se i de su)"
+              class="w-full bg-slate-950 border-2 border-indigo-500/50 focus:border-indigo-400 text-white font-jp text-xl px-4 py-3.5 rounded-xl outline-none transition-all shadow-lg placeholder:text-slate-600 placeholder:text-base font-medium"
+              oninput="handleTypingInput(this.value)"
+            />
+            <button onclick="resetTypingSession()" class="absolute right-3 top-1/2 -translate-y-1/2 p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition" title="Làm lại câu">
+              <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Virtual Japanese Onscreen Kana Keyboard -->
+        <div class="mt-6 pt-6 border-t border-slate-800">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+              <i data-lucide="layout-grid" class="w-4 h-4 text-indigo-400"></i>
+              Bàn phím ảo Kana (Nhấp để chọn ký tự)
+            </span>
+            <div class="space-x-1 text-xs">
+              <button onclick="renderVirtualKeyboard('hiragana')" id="kb-tab-hira" class="px-2.5 py-1 bg-slate-800 text-indigo-300 rounded font-medium border border-indigo-500/30">Hiragana</button>
+              <button onclick="renderVirtualKeyboard('katakana')" id="kb-tab-kata" class="px-2.5 py-1 bg-slate-900 text-slate-400 hover:bg-slate-800 rounded font-medium border border-slate-800">Katakana</button>
+            </div>
+          </div>
+
+          <!-- Key Grid container -->
+          <div id="virtual-keyboard-grid" class="grid grid-cols-5 md:grid-cols-10 gap-1.5 p-3 bg-slate-950 rounded-xl border border-slate-800/80 max-h-48 overflow-y-auto">
+            <!-- Rendered by JS -->
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Completion Celebration Card (Hidden by default) -->
+      <div id="typing-complete-card" class="hidden bg-gradient-to-r from-emerald-950/80 to-slate-900 border border-emerald-500/40 rounded-2xl p-6 text-center space-y-4 shadow-2xl transition-all">
+        <div class="inline-flex p-3 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+          <i data-lucide="party-popper" class="w-8 h-8"></i>
+        </div>
+        <h3 class="text-2xl font-bold text-white">Xuất sắc! Bạn đã hoàn thành câu gõ!</h3>
+        <p class="text-sm text-slate-300 max-w-md mx-auto">Tốc độ của bạn đạt <strong id="res-wpm" class="text-emerald-400">0 WPM</strong> với độ chính xác <strong id="res-acc" class="text-emerald-400">100%</strong>.</p>
+        <div class="flex justify-center gap-3 pt-2">
+          <button onclick="nextTypingSentence()" class="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-xl text-sm transition shadow-lg shadow-emerald-600/30 flex items-center gap-2">
+            <span>Sang câu tiếp theo</span>
+            <i data-lucide="arrow-right" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ================= TAB 2: CANVAS STROKE PRACTICE ================= -->
+    <section id="tab-canvas" class="tab-content hidden space-y-6">
+      
+      <!-- Top Canvas Controls Banner -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 class="text-xl font-bold text-white flex items-center gap-2">
+            <span>Vẽ nét chữ (Kana & Kanji Canvas Practice)</span>
+            <span class="text-xs font-normal px-2.5 py-0.5 rounded-full bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">HTML5 Canvas Engine</span>
+          </h2>
+          <p class="text-sm text-slate-400 mt-1">Luyện viết theo ô chữ 米字格 mờ. Hỗ trợ cảm ứng điện thoại & chuột.</p>
+        </div>
+
+        <!-- Mode selector: Hiragana / Katakana / Kanji -->
+        <div class="flex items-center space-x-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800">
+          <button onclick="setCanvasCharCategory('hiragana')" id="cat-btn-hiragana" class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white shadow">Hiragana</button>
+          <button onclick="setCanvasCharCategory('katakana')" id="cat-btn-katakana" class="px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-400 hover:text-white">Katakana</button>
+          <button onclick="setCanvasCharCategory('kanji')" id="cat-btn-kanji" class="px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-400 hover:text-white">Kanji Cơ Bản</button>
+        </div>
+      </div>
+
+      <!-- Main Drawing Workspace -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Left Column: Character List Selector (4 Cols) -->
+        <div class="lg:col-span-4 bg-slate-900 border border-slate-800 rounded-2xl p-5 flex flex-col justify-between space-y-4">
+          <div>
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider">Danh sách ký tự</h3>
+              <span id="char-count-badge" class="text-xs text-indigo-400 font-mono">10 ký tự</span>
+            </div>
+
+            <!-- Grid of available characters -->
+            <div id="character-selector-grid" class="grid grid-cols-4 gap-2.5 max-h-72 lg:max-h-96 overflow-y-auto p-1">
+              <!-- Rendered by JS -->
+            </div>
+          </div>
+
+          <!-- Current Selected Info Box -->
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
+            <div class="text-xs text-slate-500">Ký tự đang chọn:</div>
+            <div class="flex items-center justify-between">
+              <div class="flex items-center space-x-3">
+                <span id="selected-char-display" class="text-4xl font-jp font-bold text-white">あ</span>
+                <div>
+                  <div id="selected-char-romaji" class="text-sm font-mono text-amber-400">"a"</div>
+                  <div id="selected-char-meaning" class="text-xs text-slate-400">Âm Hiragana A</div>
+                </div>
+              </div>
+              <div class="text-right">
+                <div class="text-xs text-slate-500">Số nét</div>
+                <div id="selected-char-strokes" class="text-sm font-bold text-indigo-400">3 nét</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Interactive HTML5 Canvas (8 Cols) -->
+        <div class="lg:col-span-8 bg-slate-900 border border-slate-800 rounded-2xl p-6 flex flex-col items-center justify-center space-y-6 shadow-2xl relative">
+          
+          <!-- Canvas Container with Grid overlay -->
+          <div class="relative w-full max-w-[340px] aspect-square rounded-2xl overflow-hidden border-2 border-indigo-500/40 shadow-inner bg-slate-950">
+            
+            <!-- Tianzige / Mizige Dotted Line Overlay -->
+            <svg class="absolute inset-0 w-full h-full pointer-events-none stroke-red-500/20" width="100%" height="100%">
+              <line x1="0" y1="0" x2="100%" y2="100%" stroke-dasharray="4 4" stroke-width="1"/>
+              <line x1="100%" y1="0" x2="0" y2="100%" stroke-dasharray="4 4" stroke-width="1"/>
+              <line x1="50%" y1="0" x2="50%" y2="100%" stroke-dasharray="4 4" stroke-width="1.5"/>
+              <line x1="0" y1="50%" x2="100%" y2="50%" stroke-dasharray="4 4" stroke-width="1.5"/>
+              <rect x="0" y="0" width="100%" height="100%" fill="none" stroke="rgba(239,68,68,0.3)" stroke-width="2"/>
+            </svg>
+
+            <!-- Stroke Practice HTML5 Canvas -->
+            <canvas id="stroke-canvas" width="340" height="340" class="absolute inset-0 touch-none cursor-crosshair"></canvas>
+          </div>
+
+          <!-- Canvas Drawing Toolbar -->
+          <div class="w-full max-w-lg bg-slate-950 p-3 rounded-xl border border-slate-800 flex flex-wrap items-center justify-between gap-3">
+            
+            <!-- Brush size slider -->
+            <div class="flex items-center space-x-2 text-xs text-slate-400">
+              <span>Độ dày:</span>
+              <input type="range" id="brush-size" min="6" max="24" value="12" class="w-20 accent-indigo-500" onchange="updateBrushSize(this.value)">
+              <span id="brush-size-val" class="font-mono text-indigo-400">12px</span>
+            </div>
+
+            <!-- Guide Outline Toggle -->
+            <label class="flex items-center space-x-2 text-xs text-slate-300 cursor-pointer">
+              <input type="checkbox" id="toggle-guide" checked onchange="toggleGuideOutline()" class="rounded border-slate-700 bg-slate-800 text-indigo-600 focus:ring-indigo-500">
+              <span>Hiện nét mờ mẫu</span>
+            </label>
+
+            <!-- Action buttons -->
+            <div class="flex items-center space-x-2">
+              <button onclick="clearCanvas()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-semibold flex items-center space-x-1 transition">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                <span>Xóa</span>
+              </button>
+              <button onclick="evaluateStrokeAccuracy()" class="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold flex items-center space-x-1 transition shadow-lg shadow-indigo-600/30">
+                <i data-lucide="check-circle-2" class="w-3.5 h-3.5"></i>
+                <span>Chấm điểm</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Accuracy Assessment Feedback Card -->
+          <div id="accuracy-result-box" class="w-full max-w-lg bg-slate-950 border border-slate-800 rounded-xl p-4 hidden transition-all">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center space-x-3">
+                <div id="score-badge-circle" class="w-12 h-12 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center font-bold text-lg">
+                  95%
+                </div>
+                <div>
+                  <h4 id="score-title" class="font-bold text-sm text-white">Xuất sắc! Nét vẽ chuẩn xác.</h4>
+                  <p id="score-desc" class="text-xs text-slate-400 mt-0.5">Tỉ lệ đè nét (path overlap) & hình dạng rất tốt.</p>
+                </div>
+              </div>
+              <button onclick="nextCanvasCharacter()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 text-xs font-medium rounded-lg border border-indigo-500/30 flex items-center gap-1">
+                <span>Tiếp theo</span>
+                <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- ================= TAB 3: LIBRARY RESEARCH & BENCHMARK ================= -->
+    <section id="tab-benchmark" class="tab-content hidden space-y-6">
+      
+      <!-- Top Title -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+        <h2 class="text-xl font-bold text-white flex items-center gap-2">
+          <span>Đánh giá & Thử nghiệm Thư viện Vẽ Nét Chữ HTML5 Canvas</span>
+          <span class="text-xs font-normal px-2.5 py-0.5 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20">Research & Benchmark</span>
+        </h2>
+        <p class="text-sm text-slate-400 mt-1">So sánh các giải pháp công nghệ cho nét vẽ Kanji/Kana và chạy thử nghiệm CDN Hanzi Writer thực tế.</p>
+      </div>
+
+      <!-- Comparative Analysis Table Card -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl overflow-hidden">
+        <h3 class="text-base font-bold text-slate-200 mb-4 flex items-center gap-2">
+          <i data-lucide="table" class="w-5 h-5 text-indigo-400"></i>
+          <span>Bảng so sánh chi tiết các Thư viện Vẽ nét chữ</span>
+        </h3>
+
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse text-xs md:text-sm">
+            <thead>
+              <tr class="bg-slate-950 border-b border-slate-800 text-slate-400 uppercase tracking-wider">
+                <th class="p-3.5 font-semibold">Tiêu chí so sánh</th>
+                <th class="p-3.5 font-semibold text-indigo-400">1. Hanzi Writer (SVG Vector)</th>
+                <th class="p-3.5 font-semibold text-sky-400">2. Kanji Canvas (Native JS)</th>
+                <th class="p-3.5 font-semibold text-emerald-400">3. Custom HTML5 Canvas (React/Vanilla)</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800 text-slate-300">
+              <tr class="hover:bg-slate-800/40">
+                <td class="p-3.5 font-semibold text-slate-200">Hỗ trợ Bộ ký tự</td>
+                <td class="p-3.5">Rất mạnh với Kanji & Hanzi (&gt;9,000 chữ). Hiragana/Katakana cần custom JSON SVG data.</td>
+                <td class="p-3.5">Chuyên dụng cho Kanji tiếng Nhật (Data vector dạng JSON KanjiVG).</td>
+                <td class="p-3.5">Hỗ trợ 100% tất cả bộ chữ (Hiragana, Katakana, Kanji, Romaji) thông qua HTML5 Font System.</td>
+              </tr>
+              <tr class="hover:bg-slate-800/40">
+                <td class="p-3.5 font-semibold text-slate-200">Hoạt ảnh nét vẽ (Animation)</td>
+                <td class="p-3.5 text-emerald-400 font-medium">Xuất sắc. Tự động vẽ từng nét theo thứ tự chuẩn stroke order.</td>
+                <td class="p-3.5">Trung bình. Chỉ hiển thị nét tĩnh hoặc animation đơn giản.</td>
+                <td class="p-3.5">Cần tự viết mã animation stroke path (Phức tạp nếu làm Kanji nhiều nét).</td>
+              </tr>
+              <tr class="hover:bg-slate-800/40">
+                <td class="p-3.5 font-semibold text-slate-200">Thuật toán Chấm điểm (Quiz API)</td>
+                <td class="p-3.5 text-emerald-400 font-medium">Tích hợp sẵn Quiz API (Kiểm tra thứ tự nét & hướng nét chính xác).</td>
+                <td class="p-3.5">Nhận diện theo thuật toán vector matching đơn giản.</td>
+                <td class="p-3.5">Chấm điểm theo Pixel Overlay / Bounding Box Raster Intersection (Linh hoạt & Tùy biến 100%).</td>
+              </tr>
+              <tr class="hover:bg-slate-800/40">
+                <td class="p-3.5 font-semibold text-slate-200">Hiệu năng & Dung lượng</td>
+                <td class="p-3.5">Nhẹ (~35KB gzipped), render qua SVG responsive.</td>
+                <td class="p-3.5">Rất nhẹ, thuần Canvas 2D render.</td>
+                <td class="p-3.5 text-emerald-400 font-medium">Siêu nhẹ (&lt;5KB mã nguồn), zero-dependency, khởi tạo ngay lập tức.</td>
+              </tr>
+              <tr class="hover:bg-slate-800/40">
+                <td class="p-3.5 font-semibold text-slate-200">Đánh giá chung cho LMS</td>
+                <td class="p-3.5"><span class="px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-300 font-semibold">Tốt nhất cho Kanji</span></td>
+                <td class="p-3.5"><span class="px-2 py-0.5 rounded bg-sky-500/20 text-sky-300 font-semibold">Khá</span></td>
+                <td class="p-3.5"><span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold">Tốt nhất cho Hiragana & Katakana</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Live Hanzi Writer Library Interactive Test Drive Widget -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-6">
+        
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+          <div>
+            <h3 class="text-lg font-bold text-white flex items-center gap-2">
+              <i data-lucide="play-circle" class="w-5 h-5 text-indigo-400"></i>
+              <span>Demo Chạy Thực Tế: Hanzi Writer CDN Container</span>
+            </h3>
+            <p class="text-xs text-slate-400 mt-0.5">Kiểm tra khả năng phát hoạt ảnh nét vẽ & chế độ Quiz chấm điểm thực tế của thư viện Hanzi Writer.</p>
+          </div>
+
+          <!-- Kanji Character Selector for Hanzi Writer Demo -->
+          <div class="flex items-center space-x-2">
+            <span class="text-xs text-slate-400">Chọn Kanji:</span>
+            <button onclick="loadHanziCharacter('語')" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded font-jp font-bold text-sm">語</button>
+            <button onclick="loadHanziCharacter('日')" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded font-jp font-bold text-sm">日</button>
+            <button onclick="loadHanziCharacter('本')" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded font-jp font-bold text-sm">本</button>
+            <button onclick="loadHanziCharacter('学')" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded font-jp font-bold text-sm">学</button>
+            <button onclick="loadHanziCharacter('生')" class="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white rounded font-jp font-bold text-sm">生</button>
+          </div>
+        </div>
+
+        <!-- Interactive Widget Layout -->
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+          
+          <!-- Hanzi Writer Display SVG Box -->
+          <div class="md:col-span-5 flex flex-col items-center justify-center p-6 bg-slate-950 rounded-2xl border border-slate-800 shadow-inner">
+            <div id="hanzi-target-container" class="w-[200px] h-[200px] bg-slate-900 rounded-xl border border-indigo-500/30 flex items-center justify-center shadow-lg">
+              <!-- Hanzi Writer renders SVG here -->
+            </div>
+            <div id="hanzi-status-text" class="text-xs text-slate-400 mt-3 font-mono">Đang sẵn sàng...</div>
+          </div>
+
+          <!-- Interactive Control Panel for Hanzi Writer -->
+          <div class="md:col-span-7 space-y-4">
+            <h4 class="text-sm font-bold text-slate-200">Điều khiển Thử nghiệm:</h4>
+            
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+              <button onclick="triggerHanziAnimate()" class="p-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition shadow">
+                <i data-lucide="play" class="w-4 h-4"></i>
+                <span>Phát Hoạt Ảnh</span>
+              </button>
+              
+              <button onclick="triggerHanziQuiz()" class="p-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition shadow">
+                <i data-lucide="edit-2" class="w-4 h-4"></i>
+                <span>Chế độ Tập Viết</span>
+              </button>
+
+              <button onclick="triggerHanziShowOutline()" class="p-3 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition">
+                <i data-lucide="eye" class="w-4 h-4"></i>
+                <span>Bật/Tắt Nét Mờ</span>
+              </button>
+            </div>
+
+            <div class="p-4 bg-slate-950 rounded-xl border border-slate-800 text-xs text-slate-400 space-y-2">
+              <div class="font-semibold text-slate-300">Nhận xét kĩ thuật:</div>
+              <p>Thư viện <code class="text-amber-300">Hanzi Writer</code> cực kì phù hợp cho phân hệ dạy **Kanji nâng cao**. Với các bộ chữ **Hiragana & Katakana**, việc kết hợp **Custom HTML5 Canvas (Tab 2)** sẽ cho hiệu năng tối ưu, load tức thì và không phụ thuộc file data vector bên ngoài.</p>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+
+    <!-- ================= TAB 4: ARCHITECTURE & LMS INTEGRATION ================= -->
+    <section id="tab-arch" class="tab-content hidden space-y-6">
+      
+      <!-- Top Title -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+        <h2 class="text-xl font-bold text-white flex items-center gap-2">
+          <span>Kiến trúc Tích hợp Module Độc lập (Plug-and-Play LMS)</span>
+          <span class="text-xs font-normal px-2.5 py-0.5 rounded-full bg-sky-500/10 text-sky-300 border border-sky-500/20">DATH-261 Group 12</span>
+        </h2>
+        <p class="text-sm text-slate-400 mt-1">Mô hình tích hợp micro-frontend an toàn qua IFrame / postMessage mà không can thiệp code lõi của LMS hiện tại.</p>
+      </div>
+
+      <!-- Architectural Visual Diagram -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-6">
+        <h3 class="text-base font-bold text-slate-200 flex items-center gap-2">
+          <i data-lucide="network" class="w-5 h-5 text-indigo-400"></i>
+          <span>Sơ đồ Luồng Giao tiếp Kiến trúc (Communication Architecture Flow)</span>
+        </h3>
+
+        <!-- Interactive Diagram Box -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-slate-950 rounded-2xl border border-slate-800 relative">
+          
+          <!-- Node 1: Host LMS -->
+          <div class="p-4 bg-slate-900 rounded-xl border border-indigo-500/30 flex flex-col items-center text-center space-y-2">
+            <div class="w-10 h-10 rounded-lg bg-indigo-600/20 text-indigo-400 flex items-center justify-center font-bold">
+              LMS
+            </div>
+            <h4 class="font-bold text-sm text-white">Host LMS Web App</h4>
+            <p class="text-xs text-slate-400">Hệ thống LMS sẵn có (Repo: DATH-261-Group-12)</p>
+            <span class="px-2 py-0.5 text-[10px] bg-slate-800 text-slate-300 rounded font-mono">http://lms-host.edu.vn</span>
+          </div>
+
+          <!-- Connector 1 -->
+          <div class="hidden md:flex flex-col items-center justify-center text-indigo-400 font-mono text-xs space-y-1">
+            <div class="flex items-center space-x-1">
+              <span>postMessage()</span>
+              <i data-lucide="arrow-right-left" class="w-4 h-4"></i>
+            </div>
+            <span class="text-[10px] text-slate-500">JSON Payload / Events</span>
+          </div>
+
+          <!-- Node 2: Standalone Module Container -->
+          <div class="p-4 bg-slate-900 rounded-xl border border-emerald-500/30 flex flex-col items-center text-center space-y-2">
+            <div class="w-10 h-10 rounded-lg bg-emerald-600/20 text-emerald-400 flex items-center justify-center font-bold">
+              MOD
+            </div>
+            <h4 class="font-bold text-sm text-white">Active Learning Module</h4>
+            <p class="text-xs text-slate-400">Plugin độc lập (Typing & Canvas Practice)</p>
+            <span class="px-2 py-0.5 text-[10px] bg-slate-800 text-slate-300 rounded font-mono">iframe / micro-frontend</span>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- JSON Data Payload Schema & Event Bus Tester -->
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        
+        <!-- Left: Sample Input Payload Schema -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
+          <div class="flex items-center justify-between">
+            <h4 class="text-sm font-bold text-slate-200 flex items-center gap-2">
+              <i data-lucide="file-json" class="w-4 h-4 text-amber-400"></i>
+              <span>1. Exercise Data Config Payload (LMS &rarr; Module)</span>
+            </h4>
+            <span class="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded font-mono">Inbound</span>
+          </div>
+
+          <pre class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 text-xs font-mono text-amber-300/90 overflow-x-auto">
+{
+  "event": "INIT_EXERCISE_SESSION",
+  "sessionId": "sess_20261020_001",
+  "studentId": "SV_20120001",
+  "courseId": "JPN101_BASIC",
+  "payload": {
+    "moduleType": "TYPING_PRACTICE",
+    "targetSentence": "わたしはだいがくせいです",
+    "romajiHint": "watashi wa daigakusei desu",
+    "timeLimitSec": 120
+  }
+}</pre>
+        </div>
+
+        <!-- Right: Sample Outcome Result Payload Schema -->
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
+          <div class="flex items-center justify-between">
+            <h4 class="text-sm font-bold text-slate-200 flex items-center gap-2">
+              <i data-lucide="send" class="w-4 h-4 text-emerald-400"></i>
+              <span>2. Learning Outcome Payload (Module &rarr; LMS)</span>
+            </h4>
+            <span class="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-mono">Outbound</span>
+          </div>
+
+          <pre id="json-outcome-display" class="bg-slate-950 p-3.5 rounded-xl border border-slate-800 text-xs font-mono text-emerald-400/90 overflow-x-auto">
+{
+  "event": "SUBMIT_EXERCISE_RESULT",
+  "timestamp": "2026-10-20T19:24:00Z",
+  "sessionId": "sess_20261020_001",
+  "result": {
+    "wpm": 42,
+    "accuracyPercentage": 98.5,
+    "totalErrors": 1,
+    "completionTimeSec": 18,
+    "scoreXP": 150,
+    "status": "PASSED"
+  }
+}</pre>
+        </div>
+
+      </div>
+
+      <!-- Live Event Bus Simulation Console -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
+        <div class="flex items-center justify-between">
+          <h4 class="text-sm font-bold text-slate-200 flex items-center gap-2">
+            <i data-lucide="terminal" class="w-4 h-4 text-indigo-400"></i>
+            <span>Thử nghiệm Gửi Event postMessage Live</span>
+          </h4>
+          <button onclick="simulatePostMessage()" class="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-xs font-semibold flex items-center gap-1 transition">
+            <i data-lucide="play" class="w-3.5 h-3.5"></i>
+            <span>Bắn Event Mẫu</span>
+          </button>
+        </div>
+        <div id="event-bus-log" class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-xs font-mono text-slate-400 h-28 overflow-y-auto space-y-1">
+          <div class="text-slate-600">[System] Event Bus listener initialized for LMS integration window.postMessage()</div>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+
+  <!-- FOOTER -->
+  <footer class="bg-slate-900 border-t border-slate-800 py-3 px-4 text-center text-xs text-slate-500">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
+      <div>© 2026 DATH-261 Group 12 • Active Learning Module Prototype</div>
+      <div class="flex items-center space-x-3 text-slate-400">
+        <span>Repo: <code class="text-indigo-400">DATH-261-Group-12</code></span>
+        <span>•</span>
+        <span>HTML5 Canvas & Romaji Engine</span>
+      </div>
+    </div>
+  </footer>
+
+
+  <!-- ================= JAVASCRIPT CORE LOGIC ================= -->
+  <script>
+    /* ================= 1. GLOBAL STATE & TAB SWITCHING ================= */
+    let currentTab = 'typing';
+    let globalTimerSeconds = 0;
+    let globalTimerInterval = null;
+
+    function initGlobalTimer() {
+      if (globalTimerInterval) clearInterval(globalTimerInterval);
+      globalTimerInterval = setInterval(() => {
+        globalTimerSeconds++;
+        const mins = Math.floor(globalTimerSeconds / 60).toString().padStart(2, '0');
+        const secs = (globalTimerSeconds % 60).toString().padStart(2, '0');
+        const el = document.getElementById('global-timer');
+        if (el) el.innerText = `${mins}:${secs}`;
+      }, 1000);
+    }
+
+    function switchTab(tabId) {
+      currentTab = tabId;
+      document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+      document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('border-indigo-500', 'text-indigo-400');
+        btn.classList.add('border-transparent', 'text-slate-400');
+      });
+
+      const activeContent = document.getElementById(`tab-${tabId}`);
+      if (activeContent) activeContent.classList.remove('hidden');
+
+      const activeBtn = document.getElementById(`tab-btn-${tabId}`);
+      if (activeBtn) {
+        activeBtn.classList.add('border-indigo-500', 'text-indigo-400');
+        activeBtn.classList.remove('border-transparent', 'text-slate-400');
+      }
+
+      if (tabId === 'canvas') {
+        setTimeout(initStrokeCanvas, 100);
+      } else if (tabId === 'benchmark') {
+        setTimeout(() => loadHanziCharacter('語'), 100);
+      }
+    }
+
+
+    /* ================= 2. ROMAJI TO KANA CONVERSION DICTIONARY ================= */
+    const ROMAJI_MAP = {
+      'a':'あ','i':'い','u':'う','e':'え','o':'お',
+      'ka':'か','ki':'き','ku':'く','ke':'け','ko':'こ',
+      'sa':'さ','shi':'し','su':'す','se':'せ','so':'そ',
+      'ta':'た','chi':'ち','tsu':'つ','te':'て','to':'と',
+      'na':'な','ni':'に','nu':'ぬ','ne':'ね','no':'の',
+      'ha':'は','hi':'ひ','fu':'ふ','he':'へ','ho':'ほ',
+      'ma':'ま','mi':'み','mu':'む','me':'め','mo':'も',
+      'ya':'や','yu':'ゆ','yo':'よ',
+      'ra':'ら','ri':'り','ru':'る','re':'れ','ro':'ろ',
+      'wa':'わ','wo':'を','nn':'ん','n ':'ん',
+      'ga':'が','gi':'ぎ','gu':'ぐ','ge':'げ','go':'ご',
+      'za':'ざ','ji':'じ','zu':'ず','ze':'ぜ','zo':'ぞ',
+      'da':'だ','de':'で','do':'ど',
+      'ba':'ば','bi':'び','bu':'ぶ','be':'べ','bo':'ぼ',
+      'pa':'ぱ','pi':'ぴ','pu':'ぷ','pe':'ぺ','po':'ぽ',
+      'kya':'きゃ','kyu':'きゅ','kyo':'きょ',
+      'sha':'しゃ','shu':'しゅ','sho':'しょ',
+      'cha':'ちゃ','chu':'ちゅ','cho':'ちょ',
+      'nya':'にゃ','nyu':'にゅ','nyo':'にょ',
+      'gya':'ぎゃ','gyu':'ぎゅ','gyo':'ぎょ'
+    };
+
+    function convertRomajiBufferToKana(str) {
+      let result = '';
+      let i = 0;
+      while (i < str.length) {
+        let match3 = str.slice(i, i+3).toLowerCase();
+        let match2 = str.slice(i, i+2).toLowerCase();
+        let match1 = str.slice(i, i+1).toLowerCase();
+
+        if (ROMAJI_MAP[match3]) {
+          result += ROMAJI_MAP[match3];
+          i += 3;
+        } else if (ROMAJI_MAP[match2]) {
+          result += ROMAJI_MAP[match2];
+          i += 2;
+        } else if (ROMAJI_MAP[match1]) {
+          result += ROMAJI_MAP[match1];
+          i += 1;
+        } else {
+          result += str[i];
+          i++;
+        }
+      }
+      return result;
+    }
+
+
+    /* ================= 3. TAB 1: TYPING PRACTICE LOGIC ================= */
+    const TYPING_SENTENCES = [
+      {
+        target: "わたしはだいがくせいです",
+        romaji: "watashi wa daigakusei desu",
+        furigana: "私[わたし]は 大学 生[だいがくせい]です",
+        vietnamese: "Tôi là sinh viên đại học."
+      },
+      {
+        target: "はじめまして、よろしくおねがいします",
+        romaji: "hajimemashite, yoroshiku onegaishimasu",
+        furigana: "初[はじめ]めて、よろしくお 願[ねが]いします",
+        vietnamese: "Rất vui được gặp bạn, mong được giúp đỡ."
+      },
+      {
+        target: "きょうはとてもいいてんきですね",
+        romaji: "kyou wa totemo ii tenki desu ne",
+        furigana: "今 日[きょう]はとてもいい 天 気[てんき]ですね",
+        vietnamese: "Hôm nay thời tiết đẹp quá nhỉ."
+      },
+      {
+        target: "にほんごのべんきょうはたのしいです",
+        romaji: "nihongo no benkyou wa tanoshii desu",
+        furigana: "日 本 語[にほんご]の 勉 強[べんきょう]は 愉[たの]しいです",
+        vietnamese: "Học tiếng Nhật rất là thú vị."
+      }
+    ];
+
+    let currentSentenceIdx = 0;
+    let autoKanaMode = true;
+    let typingStartTime = null;
+    let typingErrorCount = 0;
+    let currentTypingStreak = 0;
+
+    function loadSelectedSentence() {
+      const select = document.getElementById('sentence-select');
+      currentSentenceIdx = parseInt(select.value, 10);
+      resetTypingSession();
+    }
+
+    function resetTypingSession() {
+      const item = TYPING_SENTENCES[currentSentenceIdx];
+      document.getElementById('display-furigana').innerText = item.furigana;
+      document.getElementById('display-romaji-hint').innerText = item.romaji;
+      document.getElementById('display-vietnamese').innerText = `"${item.vietnamese}"`;
+
+      const input = document.getElementById('typing-input');
+      input.value = '';
+      input.disabled = false;
+      input.focus();
+
+      typingStartTime = null;
+      typingErrorCount = 0;
+
+      document.getElementById('stat-wpm').innerText = '0';
+      document.getElementById('stat-accuracy').innerText = '100%';
+      document.getElementById('stat-errors').innerText = '0';
+      document.getElementById('typing-complete-card').classList.add('hidden');
+
+      renderTargetTiles('');
+    }
+
+    function toggleInputMode() {
+      autoKanaMode = !autoKanaMode;
+      const btn = document.getElementById('mode-toggle-btn');
+      btn.innerText = autoKanaMode ? 'Gõ Romaji Auto-Kana' : 'Gõ Kana Trực Tiếp';
+    }
+
+    function handleTypingInput(rawVal) {
+      if (!typingStartTime) typingStartTime = Date.now();
+
+      let processedVal = rawVal;
+      if (autoKanaMode) {
+        processedVal = convertRomajiBufferToKana(rawVal);
+        document.getElementById('typing-input').value = processedVal;
+      }
+
+      const targetStr = TYPING_SENTENCES[currentSentenceIdx].target;
+      renderTargetTiles(processedVal);
+
+      // Check errors
+      let errors = 0;
+      for (let i = 0; i < processedVal.length; i++) {
+        if (processedVal[i] !== targetStr[i]) {
+          errors++;
+        }
+      }
+      typingErrorCount = errors;
+      document.getElementById('stat-errors').innerText = errors;
+
+      // Stats calculation
+      const elapsedMins = (Date.now() - typingStartTime) / 60000;
+      const wpm = elapsedMins > 0 ? Math.round((processedVal.length / 5) / elapsedMins) : 0;
+      const acc = processedVal.length > 0 ? Math.max(0, Math.round(((processedVal.length - errors) / processedVal.length) * 100)) : 100;
+
+      document.getElementById('stat-wpm').innerText = wpm;
+      document.getElementById('stat-accuracy').innerText = `${acc}%`;
+
+      // Check completion
+      if (processedVal === targetStr) {
+        finishTypingSentence(wpm, acc);
+      }
+    }
+
+    function renderTargetTiles(userTyped) {
+      const targetStr = TYPING_SENTENCES[currentSentenceIdx].target;
+      const container = document.getElementById('display-target-kana');
+      container.innerHTML = '';
+
+      for (let i = 0; i < targetStr.length; i++) {
+        const char = targetStr[i];
+        const span = document.createElement('span');
+        span.className = 'w-9 h-11 md:w-11 md:h-13 border rounded-xl flex items-center justify-center transition-all duration-150 ';
+
+        if (i < userTyped.length) {
+          if (userTyped[i] === char) {
+            span.classList.add('bg-emerald-500/20', 'border-emerald-500', 'text-emerald-300', 'scale-105');
+          } else {
+            span.classList.add('bg-rose-500/20', 'border-rose-500', 'text-rose-300', 'animate-pulse');
+          }
+        } else if (i === userTyped.length) {
+          span.classList.add('bg-indigo-500/20', 'border-indigo-400', 'text-white', 'ring-2', 'ring-indigo-400/50');
+        } else {
+          span.classList.add('bg-slate-900', 'border-slate-800', 'text-slate-500');
+        }
+
+        span.innerText = char;
+        container.appendChild(span);
+      }
+    }
+
+    function finishTypingSentence(wpm, acc) {
+      document.getElementById('typing-input').disabled = true;
+      currentTypingStreak++;
+      document.getElementById('stat-typing-streak').innerText = currentTypingStreak;
+
+      document.getElementById('res-wpm').innerText = `${wpm} WPM`;
+      document.getElementById('res-acc').innerText = `${acc}%`;
+      document.getElementById('typing-complete-card').classList.remove('hidden');
+
+      // Trigger Confetti Fireworks
+      if (window.confetti) {
+        confetti({
+          particleCount: 80,
+          spread: 70,
+          origin: { y: 0.6 }
+        });
+      }
+    }
+
+    function nextTypingSentence() {
+      currentSentenceIdx = (currentSentenceIdx + 1) % TYPING_SENTENCES.length;
+      document.getElementById('sentence-select').value = currentSentenceIdx.toString();
+      resetTypingSession();
+    }
+
+    // Virtual Onscreen Kana Keyboard Renderer
+    const KANA_KEYBOARD_HIRA = ['あ','い','う','え','お','か','き','く','け','こ','さ','し','す','せ','そ','た','ち','つ','て','to','な','に','ぬ','ね','の','は','ひ','ふ','へ','ほ','ま','み','む','め','mo','や','ゆ','よ','ら','り','る','れ','ろ','わ','を','ん','、','。'];
+    const KANA_KEYBOARD_KATA = ['ア','イ','ウ','エ','オ','カ','キ','ク','ケ','コ','サ','シ','ス','セ','ソ','タ','チ','ツ','テ','ト','ナ','ニ','ヌ','ネ','ノ','ハ','ヒ','フ','ヘ','ホ','マ','ミ','ム','メ','モ','ヤ','ユ','ヨ','ラ','リ','ル','レ','ロ','ワ','ヲ','ン','ー','ッ'];
+
+    function renderVirtualKeyboard(type) {
+      const grid = document.getElementById('virtual-keyboard-grid');
+      grid.innerHTML = '';
+      const list = type === 'katakana' ? KANA_KEYBOARD_KATA : KANA_KEYBOARD_HIRA;
+
+      document.getElementById('kb-tab-hira').className = type === 'hiragana' ? 'px-2.5 py-1 bg-slate-800 text-indigo-300 rounded font-medium border border-indigo-500/30' : 'px-2.5 py-1 bg-slate-900 text-slate-400 rounded font-medium border border-slate-800';
+      document.getElementById('kb-tab-kata').className = type === 'katakana' ? 'px-2.5 py-1 bg-slate-800 text-indigo-300 rounded font-medium border border-indigo-500/30' : 'px-2.5 py-1 bg-slate-900 text-slate-400 rounded font-medium border border-slate-800';
+
+      list.forEach(char => {
+        const btn = document.createElement('button');
+        btn.className = 'key-btn p-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-indigo-500/50 rounded-lg font-jp text-sm text-slate-200 flex items-center justify-center transition shadow-sm';
+        btn.innerText = char;
+        btn.onclick = () => {
+          const input = document.getElementById('typing-input');
+          input.value += char;
+          handleTypingInput(input.value);
+        };
+        grid.appendChild(btn);
+      });
+    }
+
+
+    /* ================= 4. TAB 2: CANVAS STROKE PRACTICE LOGIC ================= */
+    const CHARACTER_DATA = {
+      hiragana: [
+        { char: 'あ', romaji: 'a', meaning: 'Âm Hiragana A', strokes: 3 },
+        { char: 'い', romaji: 'i', meaning: 'Âm Hiragana I', strokes: 2 },
+        { char: 'う', romaji: 'u', meaning: 'Âm Hiragana U', strokes: 2 },
+        { char: 'え', romaji: 'e', meaning: 'Âm Hiragana E', strokes: 2 },
+        { char: 'お', romaji: 'o', meaning: 'Âm Hiragana O', strokes: 3 },
+        { char: 'か', romaji: 'ka', meaning: 'Âm Hiragana Ka', strokes: 3 },
+        { char: 'き', romaji: 'ki', meaning: 'Âm Hiragana Ki', strokes: 4 },
+        { char: 'く', romaji: 'ku', meaning: 'Âm Hiragana Ku', strokes: 1 }
+      ],
+      katakana: [
+        { char: 'ア', romaji: 'a', meaning: 'Âm Katakana A', strokes: 2 },
+        { char: 'イ', romaji: 'i', meaning: 'Âm Katakana I', strokes: 2 },
+        { char: 'ウ', romaji: 'u', meaning: 'Âm Katakana U', strokes: 3 },
+        { char: 'エ', romaji: 'e', meaning: 'Âm Katakana E', strokes: 3 },
+        { char: 'オ', romaji: 'o', meaning: 'Âm Katakana O', strokes: 3 },
+        { char: 'カ', romaji: 'ka', meaning: 'Âm Katakana Ka', strokes: 2 },
+        { char: 'キ', romaji: 'ki', meaning: 'Âm Katakana Ki', strokes: 3 }
+      ],
+      kanji: [
+        { char: '日', romaji: 'nichi / hi', meaning: 'Mặt trời / Ngày', strokes: 4 },
+        { char: '本', romaji: 'hon / moto', meaning: 'Sách / Gốc rễ', strokes: 5 },
+        { char: '語', romaji: 'go / kata', meaning: 'Ngôn ngữ / Tiếng', strokes: 14 },
+        { char: '学', romaji: 'gaku / mana', meaning: 'Học tập', strokes: 8 },
+        { char: '生', romaji: 'sei / nama', meaning: 'Sinh sống / Học sinh', strokes: 5 }
+      ]
+    };
+
+    let selectedCategory = 'hiragana';
+    let selectedCharObj = CHARACTER_DATA.hiragana[0];
+    let isDrawing = false;
+    let strokeCanvas = null;
+    let canvasCtx = null;
+    let brushThickness = 12;
+    let showGuide = true;
+
+    function setCanvasCharCategory(cat) {
+      selectedCategory = cat;
+      selectedCharObj = CHARACTER_DATA[cat][0];
+
+      ['hiragana', 'katakana', 'kanji'].forEach(c => {
+        const btn = document.getElementById(`cat-btn-${c}`);
+        if (c === cat) {
+          btn.className = 'px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 text-white shadow';
+        } else {
+          btn.className = 'px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-400 hover:text-white';
+        }
+      });
+
+      renderCharacterSelectorGrid();
+      updateSelectedCharDisplay();
+      clearCanvas();
+    }
+
+    function renderCharacterSelectorGrid() {
+      const grid = document.getElementById('character-selector-grid');
+      grid.innerHTML = '';
+      const list = CHARACTER_DATA[selectedCategory];
+
+      document.getElementById('char-count-badge').innerText = `${list.length} ký tự`;
+
+      list.forEach(item => {
+        const btn = document.createElement('button');
+        const isSelected = item.char === selectedCharObj.char;
+        btn.className = `p-3 rounded-xl border flex flex-col items-center justify-center transition ${
+          isSelected 
+            ? 'bg-indigo-600/30 border-indigo-500 text-white shadow-lg ring-1 ring-indigo-500' 
+            : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+        }`;
+        btn.onclick = () => {
+          selectedCharObj = item;
+          renderCharacterSelectorGrid();
+          updateSelectedCharDisplay();
+          clearCanvas();
+        };
+
+        btn.innerHTML = `
+          <span class="text-xl font-jp font-bold">${item.char}</span>
+          <span class="text-[10px] text-slate-400 font-mono mt-0.5">${item.romaji}</span>
+        `;
+        grid.appendChild(btn);
+      });
+    }
+
+    function updateSelectedCharDisplay() {
+      document.getElementById('selected-char-display').innerText = selectedCharObj.char;
+      document.getElementById('selected-char-romaji').innerText = `"${selectedCharObj.romaji}"`;
+      document.getElementById('selected-char-meaning').innerText = selectedCharObj.meaning;
+      document.getElementById('selected-char-strokes').innerText = `${selectedCharObj.strokes} nét`;
+    }
+
+    function initStrokeCanvas() {
+      strokeCanvas = document.getElementById('stroke-canvas');
+      if (!strokeCanvas) return;
+      canvasCtx = strokeCanvas.getContext('2d');
+
+      // Touch & Mouse Event Listeners
+      strokeCanvas.addEventListener('mousedown', startDrawing);
+      strokeCanvas.addEventListener('mousemove', draw);
+      strokeCanvas.addEventListener('mouseup', stopDrawing);
+      strokeCanvas.addEventListener('mouseleave', stopDrawing);
+
+      strokeCanvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+      strokeCanvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+      strokeCanvas.addEventListener('touchend', stopDrawing);
+
+      clearCanvas();
+    }
+
+    function updateBrushSize(val) {
+      brushThickness = parseInt(val, 10);
+      document.getElementById('brush-size-val').innerText = `${val}px`;
+    }
+
+    function toggleGuideOutline() {
+      showGuide = document.getElementById('toggle-guide').checked;
+      redrawGuideBackground();
+    }
+
+    function clearCanvas() {
+      if (!canvasCtx) return;
+      canvasCtx.clearRect(0, 0, strokeCanvas.width, strokeCanvas.height);
+      redrawGuideBackground();
+      document.getElementById('accuracy-result-box').classList.add('hidden');
+    }
+
+    function redrawGuideBackground() {
+      if (!showGuide || !canvasCtx) return;
+
+      // Draw faint template character in background
+      canvasCtx.save();
+      canvasCtx.font = '220px "Noto Sans JP", sans-serif';
+      canvasCtx.fillStyle = 'rgba(148, 163, 184, 0.15)';
+      canvasCtx.textAlign = 'center';
+      canvasCtx.textBaseline = 'middle';
+      canvasCtx.fillText(selectedCharObj.char, strokeCanvas.width / 2, strokeCanvas.height / 2 + 10);
+      canvasCtx.restore();
+    }
+
+    function startDrawing(e) {
+      isDrawing = true;
+      const pos = getCanvasPos(e);
+      canvasCtx.beginPath();
+      canvasCtx.moveTo(pos.x, pos.y);
+      canvasCtx.lineCap = 'round';
+      canvasCtx.lineJoin = 'round';
+      canvasCtx.strokeStyle = '#6366f1'; // Indigo ink
+      canvasCtx.lineWidth = brushThickness;
+    }
+
+    function draw(e) {
+      if (!isDrawing) return;
+      const pos = getCanvasPos(e);
+      canvasCtx.lineTo(pos.x, pos.y);
+      canvasCtx.stroke();
+    }
+
+    function stopDrawing() {
+      isDrawing = false;
+    }
+
+    function handleTouchStart(e) {
+      e.preventDefault();
+      const touch = e.touches[0];
+      startDrawing(touch);
+    }
+
+    function handleTouchMove(e) {
+      e.preventDefault();
+      const touch = e.touches[0];
+      draw(touch);
+    }
+
+    function getCanvasPos(e) {
+      const rect = strokeCanvas.getBoundingClientRect();
+      return {
+        x: (e.clientX - rect.left) * (strokeCanvas.width / rect.width),
+        y: (e.clientY - rect.top) * (strokeCanvas.height / rect.height)
+      };
+    }
+
+    /* Algorithm for Canvas Pixel Overlap Accuracy Check */
+    function evaluateStrokeAccuracy() {
+      if (!canvasCtx) return;
+
+      // Create an offscreen canvas to render ideal character stroke raster
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = strokeCanvas.width;
+      offCanvas.height = strokeCanvas.height;
+      const offCtx = offCanvas.getContext('2d');
+
+      offCtx.font = '220px "Noto Sans JP", sans-serif';
+      offCtx.fillStyle = '#ffffff';
+      offCtx.textAlign = 'center';
+      offCtx.textBaseline = 'middle';
+      offCtx.fillText(selectedCharObj.char, offCanvas.width / 2, offCanvas.height / 2 + 10);
+
+      const guideImgData = offCtx.getImageData(0, 0, offCanvas.width, offCanvas.height).data;
+      const userImgData = canvasCtx.getImageData(0, 0, strokeCanvas.width, strokeCanvas.height).data;
+
+      let guidePixelCount = 0;
+      let userPixelCount = 0;
+      let overlapCount = 0;
+
+      for (let i = 0; i < userImgData.length; i += 4) {
+        const isGuideFilled = guideImgData[i + 3] > 50;
+        // User drawn ink is Indigo (#6366f1 -> alpha > 50)
+        const isUserFilled = userImgData[i + 3] > 50;
+
+        if (isGuideFilled) guidePixelCount++;
+        if (isUserFilled) userPixelCount++;
+        if (isGuideFilled && isUserFilled) overlapCount++;
+      }
+
+      if (userPixelCount === 0) {
+        alert("Vui lòng vẽ nét chữ lên ô Canvas trước khi bấm Chấm điểm!");
+        return;
+      }
+
+      const precision = overlapCount / userPixelCount;
+      const coverage = overlapCount / Math.max(guidePixelCount, 1);
+      const scoreRaw = (0.45 * precision + 0.55 * coverage) * 100;
+      const finalScore = Math.min(98, Math.max(45, Math.round(scoreRaw * 1.3)));
+
+      displayCanvasAccuracyResult(finalScore);
+    }
+
+    function displayCanvasAccuracyResult(score) {
+      const box = document.getElementById('accuracy-result-box');
+      const circle = document.getElementById('score-badge-circle');
+      const title = document.getElementById('score-title');
+      const desc = document.getElementById('score-desc');
+
+      circle.innerText = `${score}%`;
+      box.classList.remove('hidden');
+
+      if (score >= 85) {
+        circle.className = 'w-12 h-12 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center font-bold text-lg';
+        title.innerText = 'Xuất sắc! Nét vẽ rất chuẩn xác.';
+        desc.innerText = 'Tỉ lệ đè nét (path overlap) & vị trí trọng tâm cực tốt.';
+      } else if (score >= 70) {
+        circle.className = 'w-12 h-12 rounded-full bg-amber-500/20 border border-amber-500/40 text-amber-400 flex items-center justify-center font-bold text-lg';
+        title.innerText = 'Đạt! Nét vẽ tương đối tốt.';
+        desc.innerText = 'Hãy chú ý vẽ thẳng và đúng độ dày nét chữ hơn.';
+      } else {
+        circle.className = 'w-12 h-12 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-400 flex items-center justify-center font-bold text-lg';
+        title.innerText = 'Cần luyện tập thêm!';
+        desc.innerText = 'Nét vẽ nằm ngoài khung nét mờ chuẩn. Bấm Xóa để thử lại.';
+      }
+    }
+
+    function nextCanvasCharacter() {
+      const list = CHARACTER_DATA[selectedCategory];
+      const idx = list.findIndex(item => item.char === selectedCharObj.char);
+      const nextIdx = (idx + 1) % list.length;
+      selectedCharObj = list[nextIdx];
+      renderCharacterSelectorGrid();
+      updateSelectedCharDisplay();
+      clearCanvas();
+    }
+
+
+    /* ================= 5. TAB 3: HANZI WRITER DEMO INTEGRATION ================= */
+    let hanziWriterInstance = null;
+
+    function loadHanziCharacter(kanjiChar) {
+      const container = document.getElementById('hanzi-target-container');
+      if (!container) return;
+      container.innerHTML = '';
+
+      document.getElementById('hanzi-status-text').innerText = `Đang tải nét vẽ cho Kanji "${kanjiChar}"...`;
+
+      try {
+        if (typeof HanziWriter !== 'undefined') {
+          hanziWriterInstance = HanziWriter.create('hanzi-target-container', kanjiChar, {
+            width: 180,
+            height: 180,
+            padding: 5,
+            showOutline: true,
+            strokeAnimationSpeed: 1.2,
+            delayBetweenStrokes: 150,
+            strokeColor: '#38bdf8', // Sky blue stroke
+            outlineColor: '#334155'  // Slate outline
+          });
+          document.getElementById('hanzi-status-text').innerText = `Đã tải thành công Kanji "${kanjiChar}". Sẵn sàng thử nghiệm.`;
+        } else {
+          container.innerHTML = `<span class="text-rose-400 text-xs p-2 text-center">Chưa tải được CDN Hanzi Writer.</span>`;
+        }
+      } catch (err) {
+        console.error(err);
+        document.getElementById('hanzi-status-text').innerText = 'Lỗi khởi tạo Hanzi Writer.';
+      }
+    }
+
+    function triggerHanziAnimate() {
+      if (hanziWriterInstance) {
+        document.getElementById('hanzi-status-text').innerText = 'Đang phát hoạt ảnh nét vẽ...';
+        hanziWriterInstance.animateCharacter({
+          onComplete: () => {
+            document.getElementById('hanzi-status-text').innerText = 'Hoàn tất phát hoạt ảnh!';
+          }
+        });
+      }
+    }
+
+    function triggerHanziQuiz() {
+      if (hanziWriterInstance) {
+        document.getElementById('hanzi-status-text').innerText = 'Chế độ Tập viết: Dùng chuột/tay vẽ theo đúng thứ tự nét!';
+        hanziWriterInstance.quiz({
+          onComplete: (summary) => {
+            document.getElementById('hanzi-status-text').innerText = `Chúc mừng! Bạn hoàn thành tập viết với ${summary.totalMistakes} lỗi!`;
+            if (window.confetti) confetti();
+          }
+        });
+      }
+    }
+
+    function triggerHanziShowOutline() {
+      if (hanziWriterInstance) {
+        hanziWriterInstance.hideCharacter();
+        hanziWriterInstance.showOutline();
+        document.getElementById('hanzi-status-text').innerText = 'Đã bật nét mờ outline.';
+      }
+    }
+
+
+    /* ================= 6. TAB 4: ARCHITECTURE & EVENT BUS SIMULATOR ================= */
+    function simulatePostMessage() {
+      const log = document.getElementById('event-bus-log');
+      const timestamp = new Date().toLocaleTimeString();
+
+      const samplePayload = {
+        event: "SUBMIT_EXERCISE_RESULT",
+        timestamp: new Date().toISOString(),
+        sessionId: "sess_" + Math.floor(Math.random() * 89999 + 10000),
+        result: {
+          wpm: Math.floor(Math.random() * 30 + 25),
+          accuracyPercentage: 96.5,
+          totalErrors: 1,
+          scoreXP: 100,
+          status: "PASSED"
+        }
+      };
+
+      // Display dynamic JSON outcome
+      document.getElementById('json-outcome-display').innerText = JSON.stringify(samplePayload, null, 2);
+
+      const entry = document.createElement('div');
+      entry.className = 'text-emerald-400 font-mono';
+      entry.innerText = `[${timestamp}] [postMessage Sent] -> window.parent.postMessage(${JSON.stringify(samplePayload.event)}, '*')`;
+      log.appendChild(entry);
+      log.scrollTop = log.scrollHeight;
+    }
+
+
+    /* ================= 7. INITIALIZATION ON WINDOW LOAD ================= */
+    window.onload = function() {
+      // Initialize Lucide Icons
+      if (window.lucide) {
+        lucide.createIcons();
+      }
+
+      // Start session timer
+      initGlobalTimer();
+
+      // Render default tab states
+      renderVirtualKeyboard('hiragana');
+      renderCharacterSelectorGrid();
+      loadSelectedSentence();
+
+      // Setup window postMessage listener
+      window.addEventListener('message', (event) => {
+        console.log("Module Received message from Host LMS:", event.data);
+      });
+    };
+  </script>
+</body>
+</html>

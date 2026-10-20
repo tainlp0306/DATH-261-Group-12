@@ -2,8 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import { courseApi } from '../api/courseApi';
+import PrerequisitePicker from '../components/PrerequisitePicker';
 import LoadingSpinner from '../components/LoadingSpinner';
 import InstructorAssignments from '../components/InstructorAssignments';
+import CourseAnalytics from '../components/CourseAnalytics';
+import VocabularyEditor from '../components/VocabularyEditor';
 import {
   ArrowLeft,
   Layers,
@@ -29,6 +32,7 @@ import {
   FolderPlus,
   Link2,
   Megaphone,
+  Activity,
 } from 'lucide-react';
 
 const InstructorManageCoursePage = () => {
@@ -512,6 +516,32 @@ const InstructorManageCoursePage = () => {
         </button>
 
         <button
+          type="button"
+          data-testid="tab-analytics"
+          onClick={() => setActiveTab('analytics')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+            activeTab === 'analytics'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <Activity className="w-4 h-4" /> Phân tích
+        </button>
+
+        <button
+          type="button"
+          data-testid="tab-vocabulary"
+          onClick={() => setActiveTab('vocabulary')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+            activeTab === 'vocabulary'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <BookOpen className="w-4 h-4" /> Luyện tập
+        </button>
+
+        <button
           onClick={() => setActiveTab('settings')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
             activeTab === 'settings'
@@ -700,6 +730,10 @@ const InstructorManageCoursePage = () => {
 
       {activeTab === 'assignments' && <InstructorAssignments courseId={Number(id)} />}
 
+      {activeTab === 'analytics' && <CourseAnalytics courseId={Number(id)} />}
+
+      {activeTab === 'vocabulary' && <VocabularyEditor courseId={id} />}
+
       {activeTab === 'announcements' && (
         <section className="max-w-2xl space-y-5">
           <div className="border-b border-slate-200 pb-4">
@@ -865,21 +899,14 @@ const InstructorManageCoursePage = () => {
                 />
               </div>
 
-              <label className="block text-xs font-bold uppercase text-slate-600">
+              <div className="block text-xs font-bold uppercase text-slate-600">
                 Khóa học tiên quyết
-                <select
-                  multiple
-                  size={Math.min(Math.max(prerequisiteOptions.length, 3), 6)}
-                  value={settingsPrerequisites.map(String)}
-                  onChange={(event) => setSettingsPrerequisites(Array.from(event.target.selectedOptions, (option) => Number(option.value)))}
-                  className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white p-2 text-sm font-normal normal-case focus:outline-none focus:ring-2 focus:ring-emerald-700"
-                >
-                  {prerequisiteOptions.map((option) => (
-                    <option key={option.id} value={option.id}>{option.title} · {option.instructor_username}</option>
-                  ))}
-                </select>
-                <span className="mt-1 block text-xs font-normal normal-case text-slate-500">Có thể chọn nhiều khóa học.</span>
-              </label>
+                <PrerequisitePicker
+                  options={prerequisiteOptions}
+                  selectedIds={settingsPrerequisites}
+                  onChange={setSettingsPrerequisites}
+                />
+              </div>
 
               <div className="flex items-center justify-between p-3.5 bg-slate-50 rounded-xl border border-slate-200">
                 <div>

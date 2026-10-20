@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { courseApi } from '../api/courseApi';
+import PrerequisitePicker from '../components/PrerequisitePicker';
 import { 
   PlusCircle, 
   Layers, 
@@ -254,22 +255,15 @@ const CreateCoursePage = () => {
                 />
               </div>
 
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-600">
+              <div className="block text-xs font-bold uppercase tracking-wider text-slate-600">
                 Khóa học tiên quyết
-                <select
-                  multiple
-                  size={Math.min(Math.max(prerequisiteOptions.length, 3), 6)}
-                  disabled={!!createdCourse || prerequisiteOptions.length === 0}
-                  value={selectedPrerequisites.map(String)}
-                  onChange={(event) => setSelectedPrerequisites(Array.from(event.target.selectedOptions, (option) => Number(option.value)))}
-                  className="mt-1.5 w-full rounded-lg border border-slate-300 bg-white p-2 text-sm normal-case font-normal focus:outline-none focus:ring-2 focus:ring-emerald-700 disabled:bg-slate-100"
-                >
-                  {prerequisiteOptions.map((option) => (
-                    <option key={option.id} value={option.id}>{option.title} · {option.instructor_username}</option>
-                  ))}
-                </select>
-                <span className="mt-1 block text-xs font-normal normal-case text-slate-500">Giữ Ctrl (Windows) hoặc Command (Mac) để chọn nhiều khóa.</span>
-              </label>
+                <PrerequisitePicker
+                  options={prerequisiteOptions}
+                  selectedIds={selectedPrerequisites}
+                  disabled={!!createdCourse}
+                  onChange={setSelectedPrerequisites}
+                />
+              </div>
 
               <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
                 <span className="text-xs font-semibold text-slate-700">Xuất bản khóa học ngay (Publish)</span>

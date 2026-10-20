@@ -4,6 +4,7 @@ from .views import (
     RegisterView, UserProfileView, LogoutView, 
     ChangePasswordView, ToggleAccountStatusView,
     CourseListCreateView, CourseDetailView, InstructorCourseOptionsView,
+    InstructorCourseListView,
     ModuleCreateView, LessonCreaterView,
     EnrollmentListCreateView, LessonProgressUpdateView,
     AdminUserListView, AdminUserDeleteView, AdminCourseListView,
@@ -19,6 +20,10 @@ from .views import (
     OTPRequestView, PasswordOTPConfirmView,
     RegistrationOTPRequestView, RegistrationOTPConfirmView,
     SubmitAssignmentView, CourseAssignmentListCreateView, AssignmentSubmissionListView,
+    CourseVocabularyListCreateView, PracticeAttemptView,
+)
+from .analytics_views import (
+    CourseAnalyticsOverviewView, CourseAtRiskView, CourseInterveneView, MyAnalyticsView,
 )
 
 urlpatterns = [
@@ -38,6 +43,7 @@ urlpatterns = [
 
 
     path('courses/', CourseListCreateView.as_view(), name='course_list_create'),
+    path('instructor/courses/', InstructorCourseListView.as_view(), name='instructor_course_list'),
     path('instructor/courses/options/', InstructorCourseOptionsView.as_view(), name='instructor_course_options'),
     path('courses/<int:pk>/', CourseDetailView.as_view(), name='course_detail'),
     path('modules/', ModuleCreateView.as_view(), name='module_create'),
@@ -77,4 +83,10 @@ urlpatterns = [
     path('courses/<int:course_id>/assignments/', CourseAssignmentListCreateView.as_view(), name='course_assignments'),
     path('assignments/<int:assignment_id>/submit/', SubmitAssignmentView.as_view(), name='submit_assignment'),
     path('assignments/<int:assignment_id>/submissions/', AssignmentSubmissionListView.as_view(), name='assignment_submissions'),
+    path('courses/<int:course_id>/analytics/overview/', CourseAnalyticsOverviewView.as_view(), name='course_analytics_overview'),
+    path('courses/<int:course_id>/analytics/at-risk/', CourseAtRiskView.as_view(), name='course_analytics_at_risk'),
+    path('courses/<int:course_id>/analytics/intervene/', CourseInterveneView.as_view(), name='course_analytics_intervene'),
+    path('me/analytics/', MyAnalyticsView.as_view(), name='my_analytics'),
+    path('courses/<int:course_id>/vocabulary/', CourseVocabularyListCreateView.as_view(), name='course_vocabulary'),
+    path('vocabulary/<int:vocabulary_id>/practice/', PracticeAttemptView.as_view(), name='practice_attempt'),
 ]

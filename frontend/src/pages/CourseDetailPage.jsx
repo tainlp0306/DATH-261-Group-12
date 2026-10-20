@@ -7,6 +7,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import LessonComments from '../components/LessonComments';
 import CourseAssignments from '../components/CourseAssignments';
 import LessonPagination from '../components/LessonPagination';
+import LearnerRiskBanner from '../components/LearnerRiskBanner';
 import {
   ChevronDown,
   ChevronRight,
@@ -307,7 +308,15 @@ const CourseDetailPage = () => {
           Tất cả khóa học
         </Link>
 
-        {!isEnrolled && (
+        {isEnrolled ? (
+          <Link
+            to={`/courses/${course.id}/practice`}
+            data-testid="open-practice"
+            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors"
+          >
+            Luyện gõ và viết
+          </Link>
+        ) : (
           <button
             onClick={handleEnrollCourse}
             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-xl shadow-xs transition-colors cursor-pointer"
@@ -360,6 +369,8 @@ const CourseDetailPage = () => {
           </div>
         )}
       </div>
+
+      {isEnrolled && <LearnerRiskBanner courseId={course.id} />}
 
       {/* Main Learning Workspace */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">

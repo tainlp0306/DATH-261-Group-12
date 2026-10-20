@@ -8,7 +8,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
-from .models import AdminLog, Assignment, Comment, Course, Enrollment, Lesson, LessonProgress, Module, Notification, Question, Report, Submission, Test, TestSubmission
+from .models import AdminLog, Assignment, Comment, Course, Enrollment, LearningEvent, Lesson, LessonProgress, Module, Notification, PracticeLog, Question, Report, Submission, Test, TestSubmission, Vocabulary
 
 User = get_user_model()
 
@@ -77,6 +77,109 @@ class AdminUserDeletionTests(APITestCase):
 
 		self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 		self.assertTrue(User.objects.filter(pk=self.admin.pk).exists())
+
+
+class InstructorDraftCourseTests(APITestCase):
+	def setUp(self):
+		self.instructor = User.objects.create_user(
+			username='draft-instructor', password='test-password', role='instructor'
+		)
+		self.other = User.objects.create_user(
+			username='other-draft-instructor', password='test-password', role='instructor'
+		)
+		self.learner = User.objects.create_user(
+			username='draft-learner', password='test-password', role='learner'
+		)
+		self.draft = Course.objects.create(
+			title='Unpublished kanji', description='Hidden draft',
+			instructor=self.instructor, is_published=False,
+		)
+		self.published = Course.objects.create(
+			title='Published kana', description='Visible course',
+			instructor=self.instructor, is_published=True,
+		)
+
+	def test_catalog_hides_unpublished_courses(self):
+		response = self.client.get(reverse('course_list_create'))
+		titles = [course['title'] for course in response.data['results']]
+		self.assertIn('Published kana', titles)
+		self.assertNotIn('Unpublished kanji', titles)
+
+	def test_instructor_lists_own_unpublished_courses(self):
+		self.client.force_authenticate(self.instructor)
+		response = self.client.get(reverse('instructor_course_list'))
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		titles = {course['title'] for course in response.data}
+		self.assertEqual(titles, {'Unpublished kanji', 'Published kana'})
+
+		self.client.force_authenticate(self.other)
+		response = self.client.get(reverse('instructor_course_list'))
+		self.assertEqual(response.data, [])
+
+	def test_anonymous_cannot_create_a_course(self):
+		response = self.client.post(
+			reverse('course_list_create'),
+			{'title': 'Sneaky', 'description': 'Should fail', 'is_published': True},
+			format='json',
+		)
+		self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+	def test_learner_cannot_enrol_in_unpublished_course(self):
+		self.client.force_authenticate(self.learner)
+		response = self.client.post(
+			reverse('enrollment_list_create'),
+			{'course': self.draft.pk},
+			format='json',
+		)
+		self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+		self.assertFalse(Enrollment.objects.filter(student=self.learner, course=self.draft).exists())
+
+	def test_prerequisites_can_be_cleared_and_accept_several_courses(self):
+		first = Course.objects.create(title='First', description='A', instructor=self.instructor, is_published=True)
+		second = Course.objects.create(title='Second', description='B', instructor=self.instructor, is_published=True)
+		self.client.force_authenticate(self.instructor)
+		response = self.client.put(
+			reverse('course_detail', args=[self.draft.pk]),
+			{
+				'title': self.draft.title,
+				'description': self.draft.description,
+				'is_published': False,
+				'prerequisites': [first.pk, second.pk],
+			},
+			format='json',
+		)
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertCountEqual(response.data['prerequisites'], [first.pk, second.pk])
+
+		response = self.client.put(
+			reverse('course_detail', args=[self.draft.pk]),
+			{
+				'title': self.draft.title,
+				'description': self.draft.description,
+				'is_published': False,
+				'prerequisites': [],
+			},
+			format='json',
+		)
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response.data['prerequisites'], [])
+		self.assertEqual(self.draft.prerequisites.count(), 0)
+
+	def test_other_instructor_cannot_edit_or_add_a_module(self):
+		self.client.force_authenticate(self.other)
+		response = self.client.put(
+			reverse('course_detail', args=[self.published.pk]),
+			{'title': 'Hijacked', 'description': 'Nope', 'is_published': True},
+			format='json',
+		)
+		self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+		response = self.client.post(
+			reverse('module_create'),
+			{'course': self.draft.pk, 'title': 'Stolen chapter', 'order': 1},
+			format='json',
+		)
+		self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+		self.assertFalse(Module.objects.filter(course=self.draft).exists())
 
 
 class NewFeatureApiTests(APITestCase):
@@ -503,3 +606,71 @@ class AssignmentAssessmentApiTests(APITestCase):
 		self.assertEqual(submission.score, 8.5)
 		self.assertEqual(submission.feedback, 'Good work')
 		self.assertTrue(Notification.objects.filter(user=self.learner, course=self.course).exists())
+
+
+class PracticeApiTests(APITestCase):
+	def setUp(self):
+		self.instructor = User.objects.create_user(
+			username='practice-instructor', password='test-password', role='instructor'
+		)
+		self.learner = User.objects.create_user(
+			username='practice-learner', password='test-password', role='learner'
+		)
+		self.outsider = User.objects.create_user(
+			username='practice-outsider', password='test-password', role='learner'
+		)
+		self.course = Course.objects.create(
+			title='Practice course', description='Typing and stroke',
+			instructor=self.instructor, is_published=True,
+		)
+		Enrollment.objects.create(student=self.learner, course=self.course)
+
+	def test_instructor_adds_item_and_learner_retries_until_correct(self):
+		self.client.force_authenticate(self.instructor)
+		response = self.client.post(
+			reverse('course_vocabulary', args=[self.course.pk]),
+			{'word': 'こんにちは', 'meaning': 'xin chào', 'romaji': 'konnichiwa', 'kind': 'typing'},
+			format='json',
+		)
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		vocabulary = Vocabulary.objects.get(pk=response.data['id'])
+
+		self.client.force_authenticate(self.outsider)
+		response = self.client.post(
+			reverse('practice_attempt', args=[vocabulary.pk]),
+			{'answer': 'こんにちは'},
+			format='json',
+		)
+		self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+		self.client.force_authenticate(self.learner)
+		response = self.client.post(
+			reverse('practice_attempt', args=[vocabulary.pk]),
+			{'answer': 'sai'},
+			format='json',
+		)
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertFalse(response.data['is_correct'])
+		response = self.client.post(
+			reverse('practice_attempt', args=[vocabulary.pk]),
+			{'answer': 'konnichiwa'},
+			format='json',
+		)
+		self.assertTrue(response.data['is_correct'])
+		self.assertEqual(response.data['attempt_count'], 2)
+		self.assertEqual(PracticeLog.objects.filter(student=self.learner, vocabulary=vocabulary).count(), 2)
+		self.assertTrue(LearningEvent.objects.filter(
+			actor=self.learner, course=self.course, event_type='practice_attempt',
+		).exists())
+
+	def test_other_instructor_cannot_add_vocabulary(self):
+		other = User.objects.create_user(
+			username='practice-other', password='test-password', role='instructor'
+		)
+		self.client.force_authenticate(other)
+		response = self.client.post(
+			reverse('course_vocabulary', args=[self.course.pk]),
+			{'word': '日', 'kind': 'stroke'},
+			format='json',
+		)
+		self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { courseApi } from '../api/courseApi';
-import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 import {
   PlusCircle,
@@ -27,7 +26,6 @@ const InstructorCoursesPage = () => {
   const [toastMessage, setToastMessage] = useState(null);
   const [deletingCourseId, setDeletingCourseId] = useState(null);
 
-  const { user, isAdmin } = useAuth();
   const navigate = useNavigate();
 
   const showToast = (message, type = 'success') => {
@@ -38,14 +36,8 @@ const InstructorCoursesPage = () => {
   const fetchInstructorCourses = async () => {
     try {
       setLoading(true);
-      const data = await courseApi.getCourses('');
-      const coursesList = Array.isArray(data) ? data : data?.results || [];
-
-      const filtered = isAdmin
-        ? coursesList
-        : coursesList.filter((c) => c.instructor === user?.id || c.instructor_username === user?.username);
-
-      setCourses(filtered.length > 0 ? filtered : coursesList);
+      const data = await courseApi.getInstructorCourses();
+      setCourses(Array.isArray(data) ? data : data?.results || []);
     } catch (err) {
       console.error('Failed to load courses:', err);
       showToast('Không thể tải danh sách khóa học.', 'error');

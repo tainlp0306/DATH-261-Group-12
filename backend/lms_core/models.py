@@ -97,9 +97,18 @@ class Report(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 class Vocabulary(models.Model):
+    TYPING = 'typing'
+    STROKE = 'stroke'
+    KIND_CHOICES = [
+        (TYPING, 'Gõ'),
+        (STROKE, 'Vẽ nét'),
+    ]
+
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='vocabularies')
-    word = models.CharField(max_length=100)
-    meaning = models.CharField(max_length=255)
+    word = models.CharField(max_length=255)
+    meaning = models.CharField(max_length=255, blank=True)
+    romaji = models.CharField(max_length=255, blank=True)
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES, default=TYPING)
     stroke_data = models.JSONField(blank=True, null=True)
 
 class PracticeLog(models.Model):
@@ -153,6 +162,48 @@ class LessonPage(models.Model):
     lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name='pages')
     page_number = models.IntegerField(default=1)
     content = models.TextField()
+
+class LearningEvent(models.Model):
+    LESSON_COMPLETED = 'lesson_completed'
+    QUIZ_SUBMITTED = 'quiz_submitted'
+    FILE_SUBMITTED = 'file_submitted'
+    PRACTICE_ATTEMPT = 'practice_attempt'
+    ENROLLED = 'enrolled'
+    EVENT_TYPES = [
+        (LESSON_COMPLETED, 'Hoàn thành bài học'),
+        (QUIZ_SUBMITTED, 'Nộp quiz'),
+        (FILE_SUBMITTED, 'Nộp bài tệp'),
+        (PRACTICE_ATTEMPT, 'Luyện tập'),
+        (ENROLLED, 'Ghi danh'),
+    ]
+
+    actor = models.ForeignKey(User, null=True, on_delete=models.SET_NULL, related_name='learning_events')
+    course = models.ForeignKey(Course, null=True, on_delete=models.CASCADE, related_name='learning_events')
+    lesson = models.ForeignKey(Lesson, null=True, blank=True, on_delete=models.SET_NULL)
+    assignment = models.ForeignKey('Assignment', null=True, blank=True, on_delete=models.SET_NULL)
+    event_type = models.CharField(max_length=32, choices=EVENT_TYPES)
+    payload = models.JSONField(default=dict, blank=True)
+    occurred_at = models.DateTimeField(db_index=True)
+    source = models.CharField(max_length=16, default='web')
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['course', 'occurred_at'], name='lms_core_le_course_occur_idx'),
+            models.Index(fields=['actor', 'course', 'occurred_at'], name='lms_core_le_actor_course_idx'),
+            models.Index(fields=['course', 'event_type', 'occurred_at'], name='lms_core_le_type_occur_idx'),
+        ]
+
+
+class Intervention(models.Model):
+    NOTIFY = 'notify'
+    SUGGEST_REVIEW = 'suggest_review'
+
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='interventions')
+    student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='interventions_received')
+    actor = models.ForeignKey(User, null=True, on_delete=models.SET_NULL, related_name='interventions_sent')
+    action = models.CharField(max_length=32)
+    notification = models.ForeignKey(Notification, null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
 
 class SystemLog(models.Model):
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)

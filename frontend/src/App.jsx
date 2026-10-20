@@ -21,6 +21,7 @@ import ForgotPassword from './pages/ForgotPassword';
 import MyCoursesPage from './pages/MyCoursesPage';
 import HomePage from './pages/HomePage';
 import ProfilePage from './pages/ProfilePage';
+import PracticePage from './pages/PracticePage';
 
 function App() {
   return (
@@ -65,6 +66,14 @@ function App() {
 
               {/* Course Directory & Detail */}
               <Route path="/courses" element={<CourseListPage />} />
+              <Route
+                path="/courses/:id/practice"
+                element={(
+                  <ProtectedRoute>
+                    <PracticePage />
+                  </ProtectedRoute>
+                )}
+              />
               <Route path="/courses/:id" element={<CourseDetailPage />} />
 
               {/* Instructor Protected Routes */}

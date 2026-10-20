@@ -18,6 +18,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from datetime import timedelta
 import secrets
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.pagination import PageNumberPagination
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
@@ -29,14 +30,23 @@ from .serializers import (
     LessonSerializer, EnrollmentSerializer, LessonProgressSerializer,
     CommentSerializer, QuizSerializer, QuestionSerializer, TestSerializer,
     TestSubmissionSerializer, NotificationSerializer, ReportSerializer,
-    AdminLogSerializer, AssignmentSerializer, SubmissionSerializer,
+    AdminLogSerializer, AssignmentSerializer, SubmissionSerializer, VocabularySerializer,
 )
 from .permissions import IsAdmin, IsInstructor, IsInstructorOrAdmin
+
+
+def user_manages_course(user, course):
+    if not getattr(user, 'is_authenticated', False):
+        return False
+    if user.role == 'admin':
+        return True
+    return user.role == 'instructor' and course.instructor_id == user.id
 from .models import (
     AdminLog, Comment, Course, EmailOTP, Enrollment, Lesson, LessonProgress, Module,
     Notification, Quiz, Question, QuizSubmission, Report, Test, TestSubmission, User,
-    Assignment, Submission,
+    Assignment, Submission, Vocabulary, PracticeLog,
 )
+from .services.analytics import log_learning_event
 
 User = get_user_model()
 
@@ -325,13 +335,20 @@ class CoursePagination(PageNumberPagination):
 
 
 class CourseListCreateView(generics.ListCreateAPIView):
-    queryset = Course.objects.filter(is_published=True) 
     serializer_class = CourseSerializer
     pagination_class = CoursePagination
     filter_backends = [filters.SearchFilter, filters.OrderingFilter]
     search_fields = ['title', 'description'] 
     ordering_fields = ['title', 'created_at']
     ordering = ['-created_at']
+
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [IsInstructorOrAdmin()]
+        return [AllowAny()]
+
+    def get_queryset(self):
+        return Course.objects.filter(is_published=True)
 
     def get_serializer_class(self):
         if self.request.method == 'GET':
@@ -340,6 +357,20 @@ class CourseListCreateView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         serializer.save(instructor=self.request.user)
+
+
+class InstructorCourseListView(generics.ListAPIView):
+    """Courses the signed-in instructor owns, including unpublished drafts."""
+
+    serializer_class = CourseSerializer
+    permission_classes = [IsInstructorOrAdmin]
+    pagination_class = None
+
+    def get_queryset(self):
+        queryset = Course.objects.select_related('instructor').order_by('-created_at')
+        if self.request.user.role == 'admin':
+            return queryset
+        return queryset.filter(instructor=self.request.user)
 
 
 class InstructorCourseOptionsView(generics.ListAPIView):
@@ -378,7 +409,14 @@ class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
             return [IsInstructorOrAdmin()]
         return []
 
+    def perform_update(self, serializer):
+        if not user_manages_course(self.request.user, serializer.instance):
+            raise PermissionDenied('Bạn không có quyền chỉnh sửa khóa học này.')
+        serializer.save()
+
     def perform_destroy(self, instance):
+        if not user_manages_course(self.request.user, instance):
+            raise PermissionDenied('Bạn không có quyền xóa khóa học này.')
         if self.request.user.role == 'admin':
             AdminLog.objects.create(
                 admin=self.request.user,
@@ -391,10 +429,22 @@ class ModuleCreateView(generics.CreateAPIView):
     serializer_class = ModuleSerializer
     permission_classes = [IsInstructor]
 
+    def perform_create(self, serializer):
+        course = serializer.validated_data['course']
+        if not user_manages_course(self.request.user, course):
+            raise PermissionDenied('Bạn không có quyền thêm chương vào khóa học này.')
+        serializer.save()
+
 class LessonCreaterView(generics.CreateAPIView):
     queryset = Lesson.objects.all()
     serializer_class = LessonSerializer
     permission_classes = [IsInstructor]
+
+    def perform_create(self, serializer):
+        module = serializer.validated_data['module']
+        if not user_manages_course(self.request.user, module.course):
+            raise PermissionDenied('Bạn không có quyền thêm bài học vào khóa học này.')
+        serializer.save()
 
 class EnrollmentListCreateView(generics.ListCreateAPIView):
     serializer_class = EnrollmentSerializer
@@ -414,6 +464,12 @@ class EnrollmentListCreateView(generics.ListCreateAPIView):
 
         if Enrollment.objects.filter(student=request.user, course=course).exists():
             return Response({"message": "Bạn đã đăng ký khóa học này rồi"}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not course.is_published and not user_manages_course(request.user, course):
+            return Response(
+                {"error": "Khóa học chưa được xuất bản."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         enrollment = Enrollment.objects.create(student=request.user, course=course)
         serializer = self.get_serializer(enrollment)
@@ -479,11 +535,20 @@ class LessonProgressUpdateView(APIView):
             student=request.user,
             lesson=lesson
         )
+        was_completed = progress.is_completed
         progress.is_completed = request.data.get('is_completed', progress.is_completed)
         progress.last_position = request.data.get('last_position', progress.last_position)
         if last_page is not None:
             progress.last_page = last_page
         progress.save()
+        if progress.is_completed and not was_completed:
+            log_learning_event(
+                actor=request.user,
+                course=lesson.module.course,
+                lesson=lesson,
+                event_type='lesson_completed',
+                payload={'lesson_id': lesson.id},
+            )
         
         return Response({
             "message": "Cập nhật tiến độ thành công",
@@ -525,18 +590,38 @@ class AdminCourseListView(generics.ListAPIView):
 
 
 class ModuleDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Module.objects.all()
+    queryset = Module.objects.select_related('course')
     serializer_class = ModuleSerializer
     permission_classes = [IsInstructor]
 
+    def perform_update(self, serializer):
+        if not user_manages_course(self.request.user, serializer.instance.course):
+            raise PermissionDenied('Bạn không có quyền sửa chương này.')
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if not user_manages_course(self.request.user, instance.course):
+            raise PermissionDenied('Bạn không có quyền xóa chương này.')
+        instance.delete()
+
 class LessonDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Lesson.objects.all()
+    queryset = Lesson.objects.select_related('module__course')
     serializer_class = LessonSerializer
 
     def get_permissions(self):
         if self.request.method in ['PUT', 'PATCH', 'DELETE']:
             return [IsInstructor()]
         return []
+
+    def perform_update(self, serializer):
+        if not user_manages_course(self.request.user, serializer.instance.module.course):
+            raise PermissionDenied('Bạn không có quyền sửa bài học này.')
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        if not user_manages_course(self.request.user, instance.module.course):
+            raise PermissionDenied('Bạn không có quyền xóa bài học này.')
+        instance.delete()
 
 
 class CourseStudentsProgressView(generics.GenericAPIView):
@@ -949,11 +1034,24 @@ class SubmitAssignmentView(APIView):
                 if str(answers.get(str(question.id), '')).upper() == question.correct_option.upper()
             )
             score = round(correct_count / len(questions) * 10, 2)
-            submission, _ = Submission.objects.update_or_create(
-                assignment=assignment,
-                student=request.user,
-                defaults={'score': score, 'feedback': 'Hệ thống chấm tự động'},
-            )
+            with transaction.atomic():
+                submission, _ = Submission.objects.update_or_create(
+                    assignment=assignment,
+                    student=request.user,
+                    defaults={'score': score, 'feedback': 'Hệ thống chấm tự động'},
+                )
+                log_learning_event(
+                    actor=request.user,
+                    course=assignment.course,
+                    assignment=assignment,
+                    event_type='quiz_submitted',
+                    payload={
+                        'assignment_id': assignment.id,
+                        'score': score,
+                        'correct_count': correct_count,
+                        'total_questions': len(questions),
+                    },
+                )
             return Response({
                 'id': submission.id,
                 'message': 'Nộp bài thành công.',
@@ -971,4 +1069,82 @@ class SubmitAssignmentView(APIView):
             defaults={'submitted_file': uploaded_file, 'score': None, 'feedback': ''},
         )
         return Response(SubmissionSerializer(submission, context={'request': request}).data, status=status.HTTP_200_OK)
+
+
+def practice_answer_matches(vocabulary, answer):
+    normalized = ''.join(str(answer).split()).casefold()
+    if not normalized:
+        return False
+    targets = {''.join(vocabulary.word.split()).casefold()}
+    if vocabulary.romaji:
+        targets.add(''.join(vocabulary.romaji.split()).casefold())
+    return normalized in targets
+
+
+class CourseVocabularyListCreateView(generics.ListCreateAPIView):
+    serializer_class = VocabularySerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+
+    def get_course(self):
+        return get_object_or_404(Course, pk=self.kwargs['course_id'])
+
+    def get_queryset(self):
+        course = self.get_course()
+        user = self.request.user
+        enrolled = Enrollment.objects.filter(student=user, course=course).exists()
+        if not enrolled and not user_manages_course(user, course):
+            raise PermissionDenied('Bạn cần ghi danh hoặc phụ trách khóa học để luyện tập.')
+        return Vocabulary.objects.filter(course=course).order_by('id')
+
+    def perform_create(self, serializer):
+        course = self.get_course()
+        if not user_manages_course(self.request.user, course):
+            raise PermissionDenied('Bạn không có quyền thêm nội dung luyện tập.')
+        serializer.save(course=course)
+
+
+class PracticeAttemptView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, vocabulary_id):
+        vocabulary = get_object_or_404(
+            Vocabulary.objects.select_related('course'),
+            pk=vocabulary_id,
+        )
+        course = vocabulary.course
+        enrolled = Enrollment.objects.filter(student=request.user, course=course).exists()
+        if not enrolled and not user_manages_course(request.user, course):
+            raise PermissionDenied('Bạn cần ghi danh để nộp bài luyện tập.')
+
+        answer = request.data.get('answer', '')
+        if not str(answer).strip():
+            return Response({'answer': ['Nhập câu trả lời.']}, status=status.HTTP_400_BAD_REQUEST)
+
+        is_correct = practice_answer_matches(vocabulary, answer)
+        practice = PracticeLog.objects.create(
+            student=request.user,
+            vocabulary=vocabulary,
+            is_correct=is_correct,
+        )
+        log_learning_event(
+            actor=request.user,
+            course=course,
+            event_type='practice_attempt',
+            payload={
+                'vocabulary_id': vocabulary.id,
+                'kind': vocabulary.kind,
+                'is_correct': is_correct,
+            },
+        )
+        attempt_count = PracticeLog.objects.filter(
+            student=request.user,
+            vocabulary=vocabulary,
+        ).count()
+        return Response({
+            'id': practice.id,
+            'is_correct': is_correct,
+            'attempt_count': attempt_count,
+            'message': 'Đúng.' if is_correct else 'Chưa đúng. Bạn có thể luyện lại.',
+        }, status=status.HTTP_201_CREATED)
 
