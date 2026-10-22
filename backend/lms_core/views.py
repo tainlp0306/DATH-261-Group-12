@@ -971,4 +971,72 @@ class SubmitAssignmentView(APIView):
             defaults={'submitted_file': uploaded_file, 'score': None, 'feedback': ''},
         )
         return Response(SubmissionSerializer(submission, context={'request': request}).data, status=status.HTTP_200_OK)
+            
 
+from .models import PracticeLog, VocabularyProgress, Vocabulary
+from .utils import calculate_sm2
+
+class SubmitPracticeView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        vocab_id = request.data.get('vocabulary_id')
+        is_correct = request.data.get('is_correct')
+        response_time = request.data.get('response_time_ms', 0)
+
+        try:
+            vocab = Vocabulary.objects.get(id=vocab_id)
+        except Vocabulary.DoesNotExist:
+            return Response({"error": "Từ vựng không tồn tại"}, status=status.HTTP_404_NOT_FOUND)
+
+        PracticeLog.objects.create(
+            student=request.user,
+            vocabulary=vocab,
+            is_correct=is_correct,
+            response_time_ms=response_time
+        )
+
+        progress, created = VocabularyProgress.objects.get_or_create(
+            student=request.user,
+            vocabulary=vocab
+        )
+
+        rep, interval, ease, next_date = calculate_sm2(
+            is_correct, progress.repetitions, progress.interval, progress.ease_factor
+        )
+
+        progress.repetitions = rep
+        progress.interval = interval
+        progress.ease_factor = ease
+        progress.next_review_date = next_date
+        progress.save()
+
+        return Response({
+            "message": "Đã lưu kết quả thực hành",
+            "next_review_date": next_date
+        }, status=status.HTTP_200_OK)
+
+
+class AnalyticsDashboardView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        seven_days_ago = timezone.now() - timedelta(days=7)
+        
+        at_risk_progress = LessonProgress.objects.filter(
+            updated_at__lt=seven_days_ago,
+            is_completed=False
+        ).select_related('student', 'lesson')
+
+        warnings = []
+        for prog in at_risk_progress:
+            warnings.append({
+                "student_id": prog.student.id,
+                "username": prog.student.username,
+                "lesson_title": prog.lesson.title,
+                "last_active": prog.updated_at
+            })
+
+        return Response({
+            "at_risk_warnings": warnings
+        }, status=status.HTTP_200_OK)   

@@ -107,12 +107,16 @@ class PracticeLog(models.Model):
     vocabulary = models.ForeignKey(Vocabulary, on_delete=models.CASCADE)
     is_correct = models.BooleanField(default=False)
     attempt_date = models.DateTimeField(auto_now_add=True)
+    response_time_ms = models.IntegerField(blank=True, null=True)
+
+    def __str__(self):
+        status = "Đúng" if self.is_correct else "Sai"
+        return f"{self.student.username} - {self.vocabulary.word} ({status})"
 
 class Quiz(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='quizzes')
     title = models.CharField(max_length=255)
     time_limit_minutes = models.IntegerField(default=15)
-
 
 
 class QuizSubmission(models.Model):
@@ -196,6 +200,21 @@ class Submission(models.Model):
     class Meta:
         unique_together = ('assignment', 'student')
 
-        
+
+class VocabularyProgress(models.Model):
+    student = models.ForeignKey(User, on_delete=models.CASCADE)
+    vocabulary = models.ForeignKey(Vocabulary, on_delete=models.CASCADE)
+    repetitions = models.IntegerField(default=0)  
+    interval = models.IntegerField(default=1)       
+    ease_factor = models.FloatField(default=2.5)    
+    next_review_date = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('student', 'vocabulary')
+
+    def __str__(self):
+        return f"{self.student.username} - {self.vocabulary.word} (Interval: {self.interval}d)"
+
+           
 
 
