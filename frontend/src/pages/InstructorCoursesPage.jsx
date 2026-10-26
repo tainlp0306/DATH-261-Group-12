@@ -1,19 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { courseApi } from '../api/courseApi';
-import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 import {
   PlusCircle,
   BookOpen,
   Layers,
-  Users,
   Eye,
   EyeOff,
-  Edit,
   Trash2,
   Settings,
-  Sparkles,
   Search,
   CheckCircle2,
   AlertCircle,
@@ -27,9 +23,6 @@ const InstructorCoursesPage = () => {
   const [toastMessage, setToastMessage] = useState(null);
   const [deletingCourseId, setDeletingCourseId] = useState(null);
 
-  const { user, isAdmin } = useAuth();
-  const navigate = useNavigate();
-
   const showToast = (message, type = 'success') => {
     setToastMessage({ message, type });
     setTimeout(() => setToastMessage(null), 3500);
@@ -38,14 +31,9 @@ const InstructorCoursesPage = () => {
   const fetchInstructorCourses = async () => {
     try {
       setLoading(true);
-      const data = await courseApi.getCourses('');
+      const data = await courseApi.getInstructorCourses();
       const coursesList = Array.isArray(data) ? data : data?.results || [];
-
-      const filtered = isAdmin
-        ? coursesList
-        : coursesList.filter((c) => c.instructor === user?.id || c.instructor_username === user?.username);
-
-      setCourses(filtered.length > 0 ? filtered : coursesList);
+      setCourses(coursesList);
     } catch (err) {
       console.error('Failed to load courses:', err);
       showToast('Không thể tải danh sách khóa học.', 'error');
@@ -217,9 +205,6 @@ const InstructorCoursesPage = () => {
                       )}
                     </span>
 
-                    <span className="text-[11px] text-slate-400 font-medium">
-                      ID: #{c.id}
-                    </span>
                   </div>
 
                   <h3 className="text-lg font-bold text-slate-900 group-hover:text-indigo-600 transition-colors line-clamp-1">

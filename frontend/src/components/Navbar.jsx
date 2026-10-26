@@ -56,9 +56,15 @@ const Navbar = () => {
       setNotifications((current) => current.map((item) => (
         item.id === notification.id ? updated : item
       )));
-    } catch {
-      // Keep the notification unread so the user can retry.
+    } catch (error) {
+      console.error('Failed to confirm notification:', error);
     }
+  };
+
+  const openNotification = async (notification) => {
+    await markRead(notification);
+    setShowNotifications(false);
+    navigate(notification.target_url || (notification.course ? `/courses/${notification.course}` : '/'));
   };
 
   const handleLogout = async () => {
@@ -228,9 +234,12 @@ const Navbar = () => {
                           <li className="px-4 py-6 text-center text-sm text-slate-500">Chưa có thông báo.</li>
                         ) : notifications.slice(0, 10).map((item) => (
                           <li key={item.id} className={`px-4 py-3 text-sm ${item.is_read ? 'text-slate-600' : 'bg-emerald-50/60 font-medium text-slate-900'}`}>
-                            <p className="font-semibold">{item.title || 'Thông báo'}</p>
-                            <p className="mt-1">{item.message}</p>
-                            <span className="mt-1 block text-[11px] text-slate-400">{new Date(item.created_at).toLocaleString('vi-VN')}</span>
+                            <button type="button" onClick={() => openNotification(item)} className="block w-full text-left hover:text-emerald-900">
+                              <p className="font-semibold">{item.title || 'Thông báo'}</p>
+                              {item.course_title && <p className="mt-1 text-xs font-semibold text-emerald-800">Khóa học: {item.course_title}</p>}
+                              <p className="mt-1">{item.message}</p>
+                              <span className="mt-1 block text-[11px] text-slate-400">{new Date(item.created_at).toLocaleString('vi-VN')}</span>
+                            </button>
                             {!item.is_read && (
                               <button type="button" onClick={() => markRead(item)} className="mt-2 inline-flex items-center gap-1 text-xs font-semibold text-emerald-800 hover:underline">
                                 <Check className="h-3.5 w-3.5" /> Xác nhận đọc

@@ -76,7 +76,7 @@ const PasswordResetPage = () => {
                   <input
                     type="password"
                     required
-                    minLength={8}
+                    minLength={10}
                     autoComplete="new-password"
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}

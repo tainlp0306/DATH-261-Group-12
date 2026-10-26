@@ -15,6 +15,16 @@ export const courseApi = {
     return response.data;
   },
 
+  getInstructorCourseDetail: async (id) => {
+    const response = await api.get(`instructor/courses/${id}/`);
+    return response.data;
+  },
+
+  getInstructorCourses: async () => {
+    const response = await api.get('instructor/courses/');
+    return response.data;
+  },
+
   getLessonDetail: async (lessonId) => {
     const response = await api.get(`lessons/${lessonId}/`);
     return response.data;
@@ -87,8 +97,36 @@ export const courseApi = {
     return response.data;
   },
 
+  getAssignmentGrading: async (assignmentId) => {
+    const response = await api.get(`assignments/${assignmentId}/grading/`);
+    return response.data;
+  },
+
   createCourseAssignment: async (courseId, assignment) => {
-    const response = await api.post(`courses/${courseId}/assignments/`, assignment);
+    const response = await api.post(`courses/${courseId}/assignments/`, toAssignmentFormData(assignment), {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  getAssignmentDetail: async (assignmentId) => {
+    const response = await api.get(`assignments/${assignmentId}/`);
+    return response.data;
+  },
+
+  updateCourseAssignment: async (assignmentId, assignment) => {
+    const response = await api.patch(`assignments/${assignmentId}/`, toAssignmentFormData(assignment), {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  uploadQuestionAttachment: async (questionId, file) => {
+    const formData = new FormData();
+    formData.append('attachment', file);
+    const response = await api.post(`questions/${questionId}/attachment/`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
     return response.data;
   },
 
@@ -216,9 +254,29 @@ function toLessonFormData(lessonData) {
   const formData = new FormData();
   Object.entries(lessonData).forEach(([key, value]) => {
     if (value !== undefined && value !== null) {
-      formData.append(key, value);
+      formData.append(key, key === 'pages' ? JSON.stringify(value) : value);
     }
   });
   return formData;
 }
 
+function toAssignmentFormData(assignment) {
+  const formData = new FormData();
+  Object.entries(assignment).forEach(([key, value]) => {
+    if (value === undefined) return;
+    if (key === 'questions') {
+      const questions = value.map((question) => {
+        const questionData = { ...question };
+        delete questionData.attachment_file;
+        delete questionData.attachment;
+        return questionData;
+      });
+      formData.append(key, JSON.stringify(questions));
+    } else if (value === null) {
+      formData.append(key, '');
+    } else {
+      formData.append(key, value);
+    }
+  });
+  return formData;
+}

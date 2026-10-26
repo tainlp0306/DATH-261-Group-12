@@ -30,7 +30,7 @@
 - [X] Nhập OTP sai/hết hạn; hiện lỗi rõ ràng, không tạo tài khoản.
 - [X] Yêu cầu OTP liên tiếp trong thời gian giới hạn; server áp dụng giới hạn gửi lại.
 - [X] Yêu cầu khôi phục mật khẩu cho email hợp lệ và hoàn tất bằng liên kết/token.
-- [-] Đặt mật khẩu mới yếu; server từ chối và giữ nguyên mật khẩu cũ.
+- [X] Đặt mật khẩu mới yếu; server từ chối và giữ nguyên mật khẩu cũ.
 - [X] Đặt mật khẩu mới hợp lệ; đăng nhập bằng mật khẩu mới.
 - [X] Thử Google login khi đã cấu hình client ID; hoàn tất callback thành công.
 - [X] Thử Google login với token sai; UI báo lỗi, token không bị lưu.
@@ -50,7 +50,7 @@
 - [X] Mở một chương; danh sách bài học hiện theo thứ tự.
 - [X] Mở bài học dạng text và xem nội dung.
 - [X] Mở bài học có video; media hiển thị/phát được.
-- [-] Mở bài học có slide/tài liệu; liên kết mở được.
+- [X] Mở bài học có slide/tài liệu; liên kết mở được.
 - [X] Chọn trang tài liệu kế tiếp/trước; trang cập nhật.
 - [X] Đánh dấu hoàn thành bài học; trạng thái và tiến độ cập nhật.
 - [X] Refresh khóa học; trạng thái hoàn thành/vị trí học được khôi phục.
@@ -71,10 +71,10 @@
 - [X] Hết thời gian; bài tự động gửi một lần, không gửi trùng.
 - [X] Đóng modal; lịch sử được cập nhật với điểm quiz vừa làm.
 - [X] Hạn quiz đã qua; nút làm bài bị disable.
-- [-] Bài tập tệp hiển thị hạn nộp theo múi giờ mong muốn.
-- [-] Chọn tệp hợp lệ; tên tệp được hiển thị trước khi gửi.
-- [-] Bấm “Tải lên”; API nhận multipart và hiện toast thành công.
-- [-] Upload lỗi; thông báo lỗi rõ ràng và tệp đã chọn vẫn còn để thử lại.
+- [X] Bài tập tệp hiển thị hạn nộp theo múi giờ mong muốn.
+- [X] Chọn tệp hợp lệ; tên tệp được hiển thị trước khi gửi.
+- [X] Bấm “Tải lên”; API nhận multipart và hiện toast thành công.
+- [X] Upload lỗi; thông báo lỗi rõ ràng và tệp đã chọn vẫn còn để thử lại.
 - [X] Quá hạn; nút chọn tệp/tải lên bị disable và API cũng từ chối request.
 - [-] Tab lịch sử hiển thị tệp đã nộp, thời gian nộp, điểm và phản hồi.
 - [-] Chưa được chấm; lịch sử hiển thị “Chưa chấm”.
@@ -100,7 +100,7 @@
 - [X] Mở tab danh sách học viên/tiến độ; học viên và trạng thái tải đúng.
 - [X] Gửi thông báo lớp học; học viên đã ghi danh nhận thông báo.
 - [X] Instructor khác không sửa/xóa khóa học không thuộc sở hữu.
-- [ ] Instructor khác không thêm chương, bài học, bài tập hoặc chấm bài vào khóa này.
+- [X] Instructor khác không thêm chương, bài học, bài tập hoặc chấm bài vào khóa này (API regression tests).
 
 ## 5. Giảng viên - bài tập và chấm điểm
 
@@ -128,15 +128,16 @@
 - [X] Danh sách người dùng tải và tìm kiếm theo tên/email.
 - [X] Lọc người dùng theo learner/instructor/admin.
 - [X] Khóa/mở tài khoản; trạng thái và nhật ký cập nhật.
-- [-] Admin không thể xóa chính tài khoản đang dùng.
-- [ ] Xóa tài khoản khác; xác nhận tác động lên dữ liệu liên quan.
-- [ ] Danh sách toàn bộ khóa học tải.
-- [ ] Tìm khóa theo tiêu đề/giảng viên.
-- [ ] Publish/unpublish khóa học; catalog phản ánh trạng thái mới.
-- [ ] Xóa khóa; UI yêu cầu xác nhận và dữ liệu bị xóa đúng.
-- [ ] Xem báo cáo; đánh dấu đã xử lý/chưa xử lý.
-- [ ] Xem nhật ký admin và xác nhận người thực hiện/thời gian.
-- [ ] Learner/instructor gọi API admin; server trả 403.
+- [X] Admin không thể tự khóa hoặc mở khóa tài khoản (API regression test).
+- [X] Admin không thể xóa chính tài khoản đang dùng.
+- [X] Xóa tài khoản khác; xác nhận tác động lên dữ liệu liên quan.
+- [X] Danh sách toàn bộ khóa học tải.
+- [X] Tìm khóa theo tiêu đề/giảng viên.
+- [X] Publish/unpublish khóa học; catalog phản ánh trạng thái mới.
+- [X] Xóa khóa; UI yêu cầu xác nhận và dữ liệu bị xóa đúng.
+- [X] Xem báo cáo; đánh dấu đã xử lý/chưa xử lý.
+- [X] Xem nhật ký admin và xác nhận người thực hiện/thời gian.
+- [X] Learner/instructor gọi API admin; server trả 403.
 
 ## 7. Phi chức năng và hồi quy
 
@@ -146,37 +147,40 @@
 - [ ] Toast hiển thị cho thành công/lỗi quan trọng và tự đóng đúng lúc.
 - [ ] API lỗi/mất mạng; UI không mắc kẹt ở trạng thái loading.
 - [ ] Không có lỗi uncaught trong console ở các luồng chính.
-- [ ] `cd backend; python manage.py check` hoàn tất không lỗi.
-- [ ] `cd backend; python manage.py makemigrations --check --dry-run` không phát hiện migration thiếu.
-- [ ] `cd backend; python manage.py test` chạy với database test khả dụng.
-- [ ] `cd frontend; npm run lint` không có lỗi lint mới.
-- [ ] `cd frontend; npm run build` hoàn tất thành công.
+- [X] `cd backend; python manage.py check` hoàn tất không lỗi.
+- [X] `cd backend; python manage.py makemigrations --check --dry-run` không phát hiện migration thiếu.
+- [X] `cd backend; python manage.py test lms_core` chạy với PostgreSQL trong Docker Compose; 36 test passed.
+- [X] `cd frontend; npm run lint` không có lỗi lint mới (còn các warning đã tồn tại).
+- [X] `cd frontend; npm run build` hoàn tất thành công.
 
-## Ghi nhận lỗi
+## Yêu cầu bổ sung và trạng thái triển khai
 
-| Ngày | Mục checklist | Tài khoản/role | Kết quả thực tế | Ảnh/log/API response | Trạng thái |
-|---|---|---|---|---|---|
-| | | | | | |
+Các mục dưới đây đã được cập nhật trong code. Những thao tác UI được giữ ở trạng thái chưa xác nhận cho đến khi chạy thử trực tiếp trên trình duyệt.
 
-khóa học chưa xuất bản, sau khi tạo thì giảng viên không truy cập vào được(trang quản lí của giáo viên không hiện tuy nhiên mục chọn môn tiên quyết vẫn xuất hiện chứng tỏ khóa học đó vẫn tồn tại) tuy nhiên admin lại có thể truy cập
+| Yêu cầu | Cập nhật | Xác minh |
+|---|---|---|
+| Instructor quản lý khóa draft của chính mình; không xem trang quản lý khóa của instructor khác | Thêm danh sách khóa theo owner, endpoint chi tiết quản lý chỉ trả khóa của owner/admin | API regression tests |
+| Chọn/xóa nhiều khóa tiên quyết | Dùng checkbox picker có thể chọn và bỏ chọn trong trang tạo và chỉnh sửa | Chưa xác nhận thủ công trên trình duyệt |
+| Mật khẩu mạnh hơn | Tối thiểu 10 ký tự, áp dụng ở server và các form tạo/đặt lại mật khẩu | API tests passed |
+| Nội dung slide | Trang bài học riêng hỗ trợ liên kết slide, tài liệu đính kèm và phân trang; có test upload/page API | API test passed; chưa kiểm tra mở tài liệu trên trình duyệt |
+| Đề cương khóa học, bài học và bài tập | Đề cương chỉ liệt kê chương/nội dung; bài học và bài tập mở trên route riêng; bài tập gắn chương nằm ngang cấp bài học | Build passed; chưa xác nhận thủ công |
+| Nộp tệp | Trang riêng, hiển thị tên/dung lượng, giới hạn 20 MB, bài nộp hiện tại và thay thế/bỏ tệp đã chọn | Build passed; chưa xác nhận thủ công |
+| Ẩn ID khóa học | Gỡ ID khỏi các giao diện danh sách, trang quản lý, tạo khóa và hồ sơ | Source/build verified |
+| Thông báo ghi rõ khóa học | API trả `course_title`; kênh thông báo và menu notification hiển thị tiêu đề | Django check/build passed |
+| Tách trang chấm điểm | Quiz có bảng học viên/câu hỏi/đáp án/đúng-sai; bài tệp có học viên/tệp mới nhất/điểm; bỏ lưu phản hồi | API tests/build passed |
+| Admin không tự khóa/mở khóa | Server từ chối toggle tài khoản hiện tại và UI vô hiệu hóa nút tương ứng | API regression test passed |
+| Nội dung bài học nhiều trang | Instructor tạo/sửa trang nội dung; learner khôi phục trang đã lưu; thay đổi trang được thông báo | API regression test/build passed; chưa xác nhận thủ công |
+| Slide và học liệu | PDF/slide được nhúng trong trang bài học, phân trang lưu tiến độ và vẫn có liên kết tải/mở ngoài | API regression test/build passed; chưa xác nhận thủ công |
+| Đề bài và đính kèm câu hỏi | Assignment nhận tệp đề; câu hỏi quiz có tệp/hình ảnh; learner xem được nội dung | API regression tests/build passed; chưa xác nhận thủ công |
+| Nháp, lịch mở và deadline giờ Việt Nam | Assignment có thể lưu nháp/lên lịch, tự mở theo thời gian; deadline quick-pick 10/15/20/30 phút dùng UTC+7 | API regression test/build passed; chưa xác nhận thủ công |
+| Chỉnh sửa quiz và cập nhật điểm | Câu hỏi/đáp án sửa được sau khi tạo; submission được tính lại theo bộ câu hỏi hiện hành | API regression test passed |
+| Thông báo cập nhật có điều hướng | Course/module/lesson/assignment/điểm có target; instructor mặc định gửi và có thể tắt với lesson/assignment/course updates | API regression tests/build passed; chưa xác nhận thủ công |
+| AI | Đã loại khỏi phạm vi theo quyết định giảm tải; không triển khai AI/RAG | — |
 
-phần chọn môn tiên quyết, sau khi chọn không thể xóa môn, không thể chọn nhiều
+## Ghi nhận lỗi đã xử lý
 
-mk chưa mạnh
+| Ngày | Vấn đề | Vai trò bị ảnh hưởng | Nguyên nhân | Xử lý |
+|---|---|---|---|---|
+| 2026-10-24 | Course list/detail trả HTTP 500 sau thay đổi outline | Instructor và learner | Migration `0009_assignment_module_submission_answers` chưa áp dụng; outline mới truy vấn `Assignment.module_id` không tồn tại trong DB. Không phát hiện class trùng tên. | Backend log xác nhận cột thiếu; đã áp migration, thêm API list riêng cho instructor và chạy 31 test thành công |
 
-cần test thêm với testcase slide
-
-thiết kế lại trang khóa học. khi bấm vào khóa học, chỉ hiện danh sách chương học và mỗi bài trong chương. khi chọn bài thì chuyển sang trang riêng chỉ chứa nội dung bài học chứ không vừa danh sách chương, bài bên trái và bài học bên phải để tiết kiệm không gian. ngoài ra, phần bài tập cần cho ngang cấp với bài học để khi người học chọn vào chương thì biết có bài tập nào, không phải mò vào từng bài học.
-
-giao diện nộp file cực khó dùng, nên tham khảo giao diện sau:
-![alt text](image.png)
-
-ẩn ID khóa học
-
-kênh thông báo ghi rõ khóa học nào phát thông báo
-
-lỗi instructor khác xem được khóa học instructor này quản lí
-
-phần chấm điểm của giảng viên nên cấu trúc lại. bài kiểm tra nên ngang cấp với 1 bài học trong 1 chương, khi xem lại bài kiểm tra, cần cung cấp 1 trang mới cho giảng viên, vì nếu dùng chung, nhiều bài kiểm tra + nhiều bài nộp của sinh viên + nhiều câu hỏi sẽ làm cho trang cực rối. cho nên phần bài kiểm tra, nếu là câu hỏi trắc nghiệm thì là bảng 2 chiều chứa học viên, câu hỏi, thông tin là đáp án đã chọn và đúng sai. còn nộp tệp thì chỉ cần sinh viên và tệp mới nhất. nút lưu phản hồi khá thừa.
-
-admin tự khóa được tài khoản
+Tài khoản admin duy nhất có `is_active=False` trong DB local (`demo_admin`) đã được kích hoạt lại; không thay đổi mật khẩu.

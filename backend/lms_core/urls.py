@@ -3,7 +3,8 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from .views import (
     RegisterView, UserProfileView, LogoutView, 
     ChangePasswordView, ToggleAccountStatusView,
-    CourseListCreateView, CourseDetailView, InstructorCourseOptionsView,
+    CourseListCreateView, CourseDetailView, InstructorCourseOptionsView, InstructorCourseDetailView,
+    InstructorCourseListView,
     ModuleCreateView, LessonCreaterView,
     EnrollmentListCreateView, LessonProgressUpdateView,
     AdminUserListView, AdminUserDeleteView, AdminCourseListView,
@@ -19,6 +20,7 @@ from .views import (
     OTPRequestView, PasswordOTPConfirmView,
     RegistrationOTPRequestView, RegistrationOTPConfirmView,
     SubmitAssignmentView, CourseAssignmentListCreateView, AssignmentSubmissionListView,
+    AssignmentGradingView, AssignmentDetailView, AssignmentQuestionAttachmentView,
 )
 
 urlpatterns = [
@@ -39,7 +41,9 @@ urlpatterns = [
 
     path('courses/', CourseListCreateView.as_view(), name='course_list_create'),
     path('instructor/courses/options/', InstructorCourseOptionsView.as_view(), name='instructor_course_options'),
+    path('instructor/courses/', InstructorCourseListView.as_view(), name='instructor_course_list'),
     path('courses/<int:pk>/', CourseDetailView.as_view(), name='course_detail'),
+    path('instructor/courses/<int:pk>/', InstructorCourseDetailView.as_view(), name='instructor_course_detail'),
     path('modules/', ModuleCreateView.as_view(), name='module_create'),
     path('lessons/', LessonCreaterView.as_view(), name='lesson_create'),
     path('enrollments/', EnrollmentListCreateView.as_view(), name='enrollment_list_create'),
@@ -75,6 +79,9 @@ urlpatterns = [
     path('admin/reports/<int:pk>/', AdminReportDetailView.as_view(), name='admin_report_detail'),
     path('admin/logs/', AdminLogListView.as_view(), name='admin_logs'),
     path('courses/<int:course_id>/assignments/', CourseAssignmentListCreateView.as_view(), name='course_assignments'),
+    path('assignments/<int:assignment_id>/', AssignmentDetailView.as_view(), name='assignment_detail'),
+    path('questions/<int:question_id>/attachment/', AssignmentQuestionAttachmentView.as_view(), name='question_attachment'),
     path('assignments/<int:assignment_id>/submit/', SubmitAssignmentView.as_view(), name='submit_assignment'),
     path('assignments/<int:assignment_id>/submissions/', AssignmentSubmissionListView.as_view(), name='assignment_submissions'),
+    path('assignments/<int:assignment_id>/grading/', AssignmentGradingView.as_view(), name='assignment_grading'),
 ]

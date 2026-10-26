@@ -17,8 +17,10 @@ from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from datetime import timedelta
+import json
 import secrets
 from rest_framework.pagination import PageNumberPagination
+from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from google.auth.transport import requests as google_requests
@@ -31,14 +33,62 @@ from .serializers import (
     TestSubmissionSerializer, NotificationSerializer, ReportSerializer,
     AdminLogSerializer, AssignmentSerializer, SubmissionSerializer,
 )
-from .permissions import IsAdmin, IsInstructor, IsInstructorOrAdmin
+from .permissions import IsAdmin, IsCourseOwnerOrAdmin, IsInstructor, IsInstructorOrAdmin
 from .models import (
-    AdminLog, Comment, Course, EmailOTP, Enrollment, Lesson, LessonProgress, Module,
+    AdminLog, Comment, Course, EmailOTP, Enrollment, Lesson, LessonPage, LessonProgress, Module,
     Notification, Quiz, Question, QuizSubmission, Report, Test, TestSubmission, User,
     Assignment, Submission,
 )
 
 User = get_user_model()
+
+
+def notify_course_learners(course, *, title, message, target_url, available_at=None):
+    learner_ids = Enrollment.objects.filter(
+        course=course,
+        student__is_active=True,
+        student__role='learner',
+    ).values_list('student_id', flat=True)
+    Notification.objects.bulk_create([
+        Notification(
+            user_id=user_id,
+            course=course,
+            title=title[:255],
+            message=message[:255],
+            target_url=target_url,
+            available_at=available_at,
+        )
+        for user_id in learner_ids
+    ])
+
+
+def parse_assignment_payload(data):
+    if 'questions' in data and isinstance(data['questions'], str):
+        mutable = {key: data.get(key) for key in data.keys()}
+        try:
+            mutable['questions'] = json.loads(mutable['questions'])
+        except json.JSONDecodeError:
+            return None, Response(
+                {'questions': ['Định dạng danh sách câu hỏi không hợp lệ.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        for field in ('module', 'publish_at', 'deadline'):
+            if mutable.get(field) == '':
+                mutable[field] = None
+        return mutable, None
+    return data, None
+
+
+def parse_lesson_payload(data):
+    if 'pages' in data and isinstance(data['pages'], str):
+        mutable = {key: data.get(key) for key in data.keys()}
+        try:
+            mutable['pages'] = json.loads(mutable['pages'])
+        except json.JSONDecodeError as error:
+            raise DRFValidationError({'pages': ['Định dạng nội dung các trang không hợp lệ.']}) from error
+        return mutable
+    return data
+
 
 class RegisterView(generics.CreateAPIView):
     queryset = User.objects.all()
@@ -207,11 +257,15 @@ class ChangePasswordView(APIView):
     def post(self, request):
         user = request.user
         new_password = request.data.get("new_password")
-        if new_password:
-            user.set_password(new_password)
-            user.save()
-            return Response({"message": "Đổi mật khẩu thành công"})
-        return Response({"error": "Thiếu mật khẩu mới"}, status=status.HTTP_400_BAD_REQUEST)
+        if not new_password:
+            return Response({"error": "Thiếu mật khẩu mới"}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            validate_password(new_password, user)
+        except ValidationError as error:
+            return Response({"new_password": error.messages}, status=status.HTTP_400_BAD_REQUEST)
+        user.set_password(new_password)
+        user.save(update_fields=['password'])
+        return Response({"message": "Đổi mật khẩu thành công"})
 
 
 class PasswordResetView(APIView):
@@ -309,6 +363,11 @@ class ToggleAccountStatusView(APIView):
     def post(self, request, user_id):
         try:
             user = User.objects.get(id=user_id)
+            if user.pk == request.user.pk:
+                return Response(
+                    {"error": "Không thể tự khóa hoặc mở khóa tài khoản đang đăng nhập."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             user.is_active = not user.is_active
             user.save()
             action = 'Mở khóa' if user.is_active else 'Khóa'
@@ -333,6 +392,25 @@ class CourseListCreateView(generics.ListCreateAPIView):
     ordering_fields = ['title', 'created_at']
     ordering = ['-created_at']
 
+    def get_permissions(self):
+        if self.request.method == 'POST':
+            return [IsInstructorOrAdmin()]
+        return [AllowAny()]
+
+    def get_queryset(self):
+        queryset = Course.objects.select_related('instructor').prefetch_related(
+            'modules__lessons',
+            'modules__assignments',
+        )
+        user = self.request.user
+        if not user.is_authenticated:
+            return queryset.filter(is_published=True)
+        if user.role == 'admin':
+            return queryset
+        if user.role == 'instructor':
+            return queryset.filter(Q(is_published=True) | Q(instructor=user)).distinct()
+        return queryset.filter(is_published=True)
+
     def get_serializer_class(self):
         if self.request.method == 'GET':
             return CourseOutlineSerializer
@@ -352,17 +430,38 @@ class InstructorCourseOptionsView(generics.ListAPIView):
             Q(is_published=True) | Q(instructor=self.request.user)
         ).order_by('title').distinct()
 
+
+class InstructorCourseListView(generics.ListAPIView):
+    serializer_class = CourseOutlineSerializer
+    permission_classes = [IsCourseOwnerOrAdmin]
+    pagination_class = None
+
+    def get_queryset(self):
+        queryset = Course.objects.select_related('instructor').prefetch_related(
+            'modules__lessons',
+            'modules__assignments',
+        )
+        if self.request.user.role == 'admin':
+            return queryset.order_by('-created_at')
+        return queryset.filter(instructor=self.request.user).order_by('-created_at')
+
+
 class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Course.objects.all()
     serializer_class = CourseSerializer
 
     def get_queryset(self):
-        queryset = Course.objects.select_related('instructor').prefetch_related('modules__lessons')
+        queryset = Course.objects.select_related('instructor').prefetch_related(
+            'modules__lessons',
+            'modules__assignments',
+        )
         user = self.request.user
         if not user.is_authenticated:
             return queryset.filter(is_published=True)
         if user.role == 'admin':
             return queryset
+        if self.request.method in ('PUT', 'PATCH', 'DELETE'):
+            return queryset.filter(instructor=user)
         visible_courses = Q(is_published=True) | Q(enrollments__student=user)
         if user.role == 'instructor':
             visible_courses |= Q(instructor=user)
@@ -375,8 +474,32 @@ class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def get_permissions(self):
         if self.request.method in ['PUT', 'PATCH', 'DELETE']:
-            return [IsInstructorOrAdmin()]
-        return []
+            return [IsCourseOwnerOrAdmin()]
+        return [AllowAny()]
+
+    def perform_update(self, serializer):
+        course = self.get_object()
+        old_values = (
+            course.title,
+            course.description,
+            course.is_published,
+            tuple(course.prerequisites.order_by('id').values_list('id', flat=True)),
+        )
+        updated = serializer.save()
+        new_values = (
+            updated.title,
+            updated.description,
+            updated.is_published,
+            tuple(updated.prerequisites.order_by('id').values_list('id', flat=True)),
+        )
+        notify = str(self.request.data.get('notify_students', 'true')).lower() not in ('false', '0', 'no')
+        if notify and old_values != new_values:
+            notify_course_learners(
+                updated,
+                title='Thông tin khóa học được cập nhật',
+                message=f'Khóa học "{updated.title}" vừa được cập nhật.',
+                target_url=f'/courses/{updated.id}',
+            )
 
     def perform_destroy(self, instance):
         if self.request.user.role == 'admin':
@@ -386,15 +509,63 @@ class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
             )
         instance.delete()
 
+
+class InstructorCourseDetailView(generics.RetrieveAPIView):
+    serializer_class = CourseSerializer
+    permission_classes = [IsCourseOwnerOrAdmin]
+
+    def get_queryset(self):
+        queryset = Course.objects.select_related('instructor').prefetch_related(
+            'modules__lessons',
+            'modules__assignments',
+        )
+        if self.request.user.role == 'admin':
+            return queryset
+        return queryset.filter(instructor=self.request.user)
+
+
 class ModuleCreateView(generics.CreateAPIView):
     queryset = Module.objects.all()
     serializer_class = ModuleSerializer
-    permission_classes = [IsInstructor]
+    permission_classes = [IsCourseOwnerOrAdmin]
+
+    def perform_create(self, serializer):
+        course = serializer.validated_data['course']
+        if self.request.user.role != 'admin' and course.instructor_id != self.request.user.id:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Bạn chỉ có thể quản lý chương trong khóa học của mình.')
+        module = serializer.save()
+        if str(self.request.data.get('notify_students', 'true')).lower() not in ('false', '0', 'no'):
+            notify_course_learners(
+                course,
+                title='Chương học mới',
+                message=f'Chương "{module.title}" vừa được thêm vào khóa học.',
+                target_url=f'/courses/{course.id}',
+            )
 
 class LessonCreaterView(generics.CreateAPIView):
     queryset = Lesson.objects.all()
     serializer_class = LessonSerializer
-    permission_classes = [IsInstructor]
+    permission_classes = [IsCourseOwnerOrAdmin]
+
+    def get_serializer(self, *args, **kwargs):
+        if 'data' in kwargs:
+            kwargs['data'] = parse_lesson_payload(kwargs['data'])
+        return super().get_serializer(*args, **kwargs)
+
+    def perform_create(self, serializer):
+        module = serializer.validated_data['module']
+        if self.request.user.role != 'admin' and module.course.instructor_id != self.request.user.id:
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Bạn chỉ có thể quản lý bài học trong khóa học của mình.')
+        lesson = serializer.save()
+        if str(self.request.data.get('notify_students', 'true')).lower() not in ('false', '0', 'no'):
+            notify_course_learners(
+                module.course,
+                title='Bài học mới trong khóa học',
+                message=f'Đã thêm bài học "{lesson.title}".',
+                target_url=f'/courses/{module.course_id}/lessons/{lesson.id}',
+            )
 
 class EnrollmentListCreateView(generics.ListCreateAPIView):
     serializer_class = EnrollmentSerializer
@@ -405,12 +576,16 @@ class EnrollmentListCreateView(generics.ListCreateAPIView):
         return Enrollment.objects.filter(student=self.request.user)
 
     def create(self, request, *args, **kwargs):
+        if request.user.role != 'learner':
+            return Response({'error': 'Chỉ học viên mới có thể đăng ký khóa học.'}, status=status.HTTP_403_FORBIDDEN)
         course_id = request.data.get('course')
         
         try:
             course = Course.objects.get(id=course_id)
         except Course.DoesNotExist:
             return Response({"error": "Khóa học không tồn tại"}, status=status.HTTP_404_NOT_FOUND)
+        if not course.is_published:
+            return Response({"error": "Không thể đăng ký khóa học chưa xuất bản."}, status=status.HTTP_400_BAD_REQUEST)
 
         if Enrollment.objects.filter(student=request.user, course=course).exists():
             return Response({"message": "Bạn đã đăng ký khóa học này rồi"}, status=status.HTTP_400_BAD_REQUEST)
@@ -465,6 +640,14 @@ class LessonProgressUpdateView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request, lesson_id):
+        if request.user.role != 'learner':
+            return Response({'error': 'Chỉ học viên mới có thể cập nhật tiến độ học.'}, status=status.HTTP_403_FORBIDDEN)
+        lesson = get_object_or_404(
+            Lesson.objects.select_related('module__course'),
+            id=lesson_id,
+        )
+        if not Enrollment.objects.filter(student=request.user, course=lesson.module.course).exists():
+            return Response({'error': 'Bạn cần đăng ký khóa học trước khi lưu tiến độ.'}, status=status.HTTP_403_FORBIDDEN)
         last_page = None
         if 'last_page' in request.data:
             try:
@@ -474,7 +657,6 @@ class LessonProgressUpdateView(APIView):
             if last_page < 1:
                 return Response({'last_page': ['Trang phải là số nguyên dương.']}, status=status.HTTP_400_BAD_REQUEST)
 
-        lesson = get_object_or_404(Lesson, id=lesson_id)
         progress, created = LessonProgress.objects.get_or_create(
             student=request.user,
             lesson=lesson
@@ -527,26 +709,118 @@ class AdminCourseListView(generics.ListAPIView):
 class ModuleDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Module.objects.all()
     serializer_class = ModuleSerializer
-    permission_classes = [IsInstructor]
+    permission_classes = [IsCourseOwnerOrAdmin]
+
+    def get_queryset(self):
+        queryset = Module.objects.select_related('course')
+        if self.request.user.role == 'admin':
+            return queryset
+        return queryset.filter(course__instructor=self.request.user)
+
+    def perform_update(self, serializer):
+        module = self.get_object()
+        old_values = (module.title, module.order)
+        updated = serializer.save()
+        notify = str(self.request.data.get('notify_students', 'true')).lower() not in ('false', '0', 'no')
+        if notify and old_values != (updated.title, updated.order):
+            notify_course_learners(
+                updated.course,
+                title='Chương học được cập nhật',
+                message=f'Chương "{updated.title}" vừa được cập nhật.',
+                target_url=f'/courses/{updated.course_id}',
+            )
+
+    def perform_destroy(self, instance):
+        course = instance.course
+        if str(self.request.data.get('notify_students', 'true')).lower() not in ('false', '0', 'no'):
+            notify_course_learners(
+                course,
+                title='Chương học đã được gỡ',
+                message=f'Chương "{instance.title}" đã được gỡ khỏi khóa học.',
+                target_url=f'/courses/{course.id}',
+            )
+        instance.delete()
 
 class LessonDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Lesson.objects.all()
     serializer_class = LessonSerializer
 
+    def get_queryset(self):
+        queryset = Lesson.objects.select_related('module__course')
+        user = self.request.user
+        if not user.is_authenticated:
+            return queryset.filter(module__course__is_published=True)
+        if user.role == 'admin':
+            return queryset
+        if self.request.method in ('PUT', 'PATCH', 'DELETE'):
+            return queryset.filter(module__course__instructor=user)
+        if user.role == 'instructor':
+            return queryset.filter(
+                Q(module__course__is_published=True) | Q(module__course__instructor=user)
+            ).distinct()
+        return queryset.filter(module__course__enrollments__student=user).distinct()
+
     def get_permissions(self):
-        if self.request.method in ['PUT', 'PATCH', 'DELETE']:
-            return [IsInstructor()]
-        return []
+        if self.request.method in ('PUT', 'PATCH', 'DELETE'):
+            return [IsCourseOwnerOrAdmin()]
+        return [AllowAny()]
+
+    def get_serializer(self, *args, **kwargs):
+        if 'data' in kwargs:
+            kwargs['data'] = parse_lesson_payload(kwargs['data'])
+        return super().get_serializer(*args, **kwargs)
+
+    def perform_update(self, serializer):
+        lesson = self.get_object()
+        old_values = (
+            lesson.title,
+            lesson.content,
+            lesson.media_url,
+            lesson.lesson_type,
+            lesson.attached_file.name if lesson.attached_file else None,
+            tuple(lesson.pages.order_by('page_number').values_list('content', flat=True)),
+        )
+        updated = serializer.save()
+        new_values = (
+            updated.title,
+            updated.content,
+            updated.media_url,
+            updated.lesson_type,
+            updated.attached_file.name if updated.attached_file else None,
+            tuple(updated.pages.order_by('page_number').values_list('content', flat=True)),
+        )
+        notify = str(self.request.data.get('notify_students', 'true')).lower() not in ('false', '0', 'no')
+        if notify and old_values != new_values:
+            course = updated.module.course
+            notify_course_learners(
+                course,
+                title='Bài học được cập nhật',
+                message=f'Bài học "{updated.title}" vừa được cập nhật.',
+                target_url=f'/courses/{course.id}/lessons/{updated.id}',
+            )
+
+    def perform_destroy(self, instance):
+        course = instance.module.course
+        if str(self.request.data.get('notify_students', 'true')).lower() not in ('false', '0', 'no'):
+            notify_course_learners(
+                course,
+                title='Bài học đã được gỡ',
+                message=f'Bài học "{instance.title}" đã được gỡ khỏi khóa học.',
+                target_url=f'/courses/{course.id}',
+            )
+        instance.delete()
 
 
 class CourseStudentsProgressView(generics.GenericAPIView):
-    permission_classes = [IsInstructor]
+    permission_classes = [IsCourseOwnerOrAdmin]
 
     def get(self, request, course_id):
         try:
             course = Course.objects.get(id=course_id)
         except Course.DoesNotExist:
             return Response({"error": "Khóa học không tồn tại"}, status=status.HTTP_404_NOT_FOUND)
+        if request.user.role != 'admin' and course.instructor_id != request.user.id:
+            return Response({'error': 'Bạn không có quyền xem tiến độ khóa học này.'}, status=status.HTTP_403_FORBIDDEN)
 
         enrollments = Enrollment.objects.filter(course=course).select_related('student')
         total_lessons = Lesson.objects.filter(module__course=course).count()
@@ -578,6 +852,10 @@ class StudentCourseProgressView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, course_id):
+        if request.user.role != 'learner' or not Enrollment.objects.filter(
+            student=request.user, course_id=course_id
+        ).exists():
+            return Response({'error': 'Bạn không có quyền xem tiến độ khóa học này.'}, status=status.HTTP_403_FORBIDDEN)
         progresses = LessonProgress.objects.filter(
             student=request.user,
             lesson__module__course_id=course_id
@@ -643,7 +921,18 @@ class LessonCommentView(generics.ListCreateAPIView):
 
     def get_queryset(self):
         lesson_id = self.kwargs['lesson_id']
-        return Comment.objects.filter(lesson_id=lesson_id).order_by('-created_at')
+        lesson = get_object_or_404(
+            Lesson.objects.select_related('module__course'),
+            pk=lesson_id,
+        )
+        course = lesson.module.course
+        user = self.request.user
+        if user.role == 'admin' or (user.role == 'instructor' and course.instructor_id == user.id):
+            return Comment.objects.filter(lesson=lesson).order_by('-created_at')
+        if user.role == 'learner' and Enrollment.objects.filter(student=user, course=course).exists():
+            return Comment.objects.filter(lesson=lesson).order_by('-created_at')
+        from rest_framework.exceptions import PermissionDenied
+        raise PermissionDenied('Bạn cần đăng ký khóa học để xem thảo luận.')
 
     def perform_create(self, serializer):
         lesson_id = self.kwargs['lesson_id']
@@ -673,7 +962,13 @@ class CourseTestListCreateView(generics.ListCreateAPIView):
     pagination_class = None
 
     def get_queryset(self):
-        return Test.objects.filter(course_id=self.kwargs['course_id'])
+        course = get_object_or_404(Course, pk=self.kwargs['course_id'])
+        if self.request.user.role not in ('admin', 'instructor') or (
+            self.request.user.role == 'instructor' and course.instructor_id != self.request.user.id
+        ):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied('Bạn không có quyền xem bài kiểm tra này.')
+        return Test.objects.filter(course=course)
 
     def perform_create(self, serializer):
         course = Course.objects.get(pk=self.kwargs['course_id'])
@@ -750,6 +1045,7 @@ class GradeSubmissionView(APIView):
                 title='Bài tập đã được chấm',
                 message=f'Bài tập "{submission.assignment.title}" đã được chấm điểm.',
                 course=submission.assignment.course,
+                target_url=f'/courses/{submission.assignment.course_id}/assignments/{submission.assignment_id}',
             )
             return Response(SubmissionSerializer(submission, context={'request': request}).data)
 
@@ -773,6 +1069,8 @@ class GradeSubmissionView(APIView):
         submission.save(update_fields=['score', 'feedback'])
         Notification.objects.create(
             user=submission.student,
+            course=submission.test.course,
+            target_url=f'/courses/{submission.test.course_id}',
             message=f'Bài tập "{submission.test.title}" đã được chấm điểm.'
         )
         return Response(TestSubmissionSerializer(submission, context={'request': request}).data)
@@ -784,7 +1082,9 @@ class NotificationListView(generics.ListAPIView):
     pagination_class = None
 
     def get_queryset(self):
-        return Notification.objects.filter(user=self.request.user).order_by('-created_at')
+        return Notification.objects.filter(user=self.request.user).filter(
+            Q(available_at__isnull=True) | Q(available_at__lte=timezone.now())
+        ).order_by('-created_at')
 
     def patch(self, request):
         notifications = self.get_queryset().filter(is_read=False)
@@ -830,7 +1130,13 @@ class CourseAnnouncementView(APIView):
         )
         recipient_ids.add(request.user.id)
         Notification.objects.bulk_create([
-            Notification(user_id=user_id, course=course, title=title, message=message)
+            Notification(
+                user_id=user_id,
+                course=course,
+                title=title,
+                message=message,
+                target_url=f'/courses/{course.id}',
+            )
             for user_id in recipient_ids
         ])
         return Response({'created': len(recipient_ids)}, status=status.HTTP_201_CREATED)
@@ -887,7 +1193,12 @@ class CourseAssignmentListCreateView(generics.ListCreateAPIView):
         if user.role == 'admin' or is_owner:
             return Assignment.objects.filter(course=course).prefetch_related('questions').order_by('created_at')
         if user.role == 'learner' and Enrollment.objects.filter(student=user, course=course).exists():
-            return Assignment.objects.filter(course=course).prefetch_related('questions').order_by('created_at')
+            return Assignment.objects.filter(
+                course=course,
+                is_published=True,
+            ).filter(
+                Q(publish_at__isnull=True) | Q(publish_at__lte=timezone.now())
+            ).prefetch_related('questions').order_by('created_at')
         from rest_framework.exceptions import PermissionDenied
         raise PermissionDenied('Bạn cần đăng ký khóa học hoặc là giảng viên phụ trách.')
 
@@ -898,10 +1209,188 @@ class CourseAssignmentListCreateView(generics.ListCreateAPIView):
         ):
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied('Bạn không có quyền tạo bài tập cho khóa học này.')
-        serializer = self.get_serializer(data=request.data)
+        payload, error_response = parse_assignment_payload(request.data)
+        if error_response:
+            return error_response
+        serializer = self.get_serializer(data=payload)
         serializer.is_valid(raise_exception=True)
-        serializer.save(course=course)
+        assignment = serializer.save(course=course)
+        notify = str(request.data.get('notify_students', 'true')).lower() not in ('false', '0', 'no')
+        if notify and assignment.is_published:
+            available_at = assignment.publish_at if assignment.publish_at and assignment.publish_at > timezone.now() else None
+            notify_course_learners(
+                course,
+                title='Bài tập mới được đăng' if available_at is None else 'Bài tập đã được lên lịch',
+                message=f'Bài tập "{assignment.title}" đã được đăng trong khóa học.',
+                target_url=f'/courses/{course.id}/assignments/{assignment.id}',
+                available_at=available_at,
+            )
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class AssignmentDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
+
+    def get_assignment(self, assignment_id):
+        return get_object_or_404(
+            Assignment.objects.select_related('course', 'module').prefetch_related('questions'),
+            pk=assignment_id,
+        )
+
+    def get_course(self):
+        return self.assignment.course
+
+    def has_management_access(self, user, assignment):
+        return user.role == 'admin' or (
+            user.role == 'instructor' and assignment.course.instructor_id == user.id
+        )
+
+    def get(self, request, assignment_id):
+        assignment = self.get_assignment(assignment_id)
+        if self.has_management_access(request.user, assignment):
+            return Response(AssignmentSerializer(
+                assignment,
+                context={'request': request, 'view': self, 'include_correct_options': True},
+            ).data)
+        if request.user.role != 'learner' or not Enrollment.objects.filter(
+            student=request.user, course=assignment.course
+        ).exists():
+            return Response({'error': 'Bạn cần đăng ký khóa học để xem bài tập.'}, status=status.HTTP_403_FORBIDDEN)
+        if not assignment.is_published or (assignment.publish_at and assignment.publish_at > timezone.now()):
+            return Response({'error': 'Bài tập chưa được mở.'}, status=status.HTTP_404_NOT_FOUND)
+        return Response(AssignmentSerializer(assignment, context={'request': request, 'view': self}).data)
+
+    def patch(self, request, assignment_id):
+        return self.update_assignment(request, assignment_id, partial=True)
+
+    def put(self, request, assignment_id):
+        return self.update_assignment(request, assignment_id, partial=False)
+
+    def update_assignment(self, request, assignment_id, partial):
+        assignment = self.get_assignment(assignment_id)
+        if not self.has_management_access(request.user, assignment):
+            return Response({'error': 'Bạn không có quyền chỉnh sửa bài tập này.'}, status=status.HTTP_403_FORBIDDEN)
+        self.assignment = assignment
+        payload, error_response = parse_assignment_payload(request.data)
+        if error_response:
+            return error_response
+        serializer = AssignmentSerializer(
+            assignment,
+            data=payload,
+            partial=partial,
+            context={'request': request, 'view': self},
+        )
+        serializer.is_valid(raise_exception=True)
+        was_published = assignment.is_published
+        updated = serializer.save()
+        notify = str(request.data.get('notify_students', 'true')).lower() not in ('false', '0', 'no')
+        if notify and (updated.is_published or was_published):
+            available_at = updated.publish_at if updated.is_published and updated.publish_at and updated.publish_at > timezone.now() else None
+            target_url = (
+                f'/courses/{updated.course_id}/assignments/{updated.id}'
+                if updated.is_published else f'/courses/{updated.course_id}'
+            )
+            notify_course_learners(
+                updated.course,
+                title='Bài tập đã được ẩn' if not updated.is_published else 'Bài kiểm tra được cập nhật',
+                message=f'Bài tập "{updated.title}" đã được {"ẩn" if not updated.is_published else "cập nhật"}.',
+                target_url=target_url,
+                available_at=available_at,
+            )
+        return Response(AssignmentSerializer(
+            updated,
+            context={'request': request, 'view': self, 'include_correct_options': True},
+        ).data)
+
+
+class AssignmentQuestionAttachmentView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [parsers.MultiPartParser, parsers.FormParser]
+
+    def post(self, request, question_id):
+        question = get_object_or_404(Question.objects.select_related('assignment__course'), pk=question_id)
+        if request.user.role != 'admin' and not (
+            request.user.role == 'instructor'
+            and question.assignment.course.instructor_id == request.user.id
+        ):
+            return Response({'error': 'Bạn không có quyền sửa câu hỏi này.'}, status=status.HTTP_403_FORBIDDEN)
+        attachment = request.FILES.get('attachment')
+        if not attachment:
+            return Response({'attachment': ['Chọn tệp đính kèm câu hỏi.']}, status=status.HTTP_400_BAD_REQUEST)
+        if attachment.size > 20 * 1024 * 1024:
+            return Response({'attachment': ['Tệp không được vượt quá 20 MB.']}, status=status.HTTP_400_BAD_REQUEST)
+        question.attachment = attachment
+        question.save(update_fields=['attachment'])
+        return Response({'id': question.id, 'attachment': request.build_absolute_uri(question.attachment.url)})
+
+
+class AssignmentGradingView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, assignment_id):
+        assignment = get_object_or_404(
+            Assignment.objects.select_related('course', 'module').prefetch_related(
+                'questions',
+                'submissions__student',
+            ),
+            pk=assignment_id,
+        )
+        if request.user.role != 'admin' and not (
+            request.user.role == 'instructor'
+            and assignment.course.instructor_id == request.user.id
+        ):
+            return Response(
+                {'error': 'Bạn không có quyền xem bảng chấm bài này.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        data = {
+            'id': assignment.id,
+            'title': assignment.title,
+            'description': assignment.description,
+            'assignment_type': assignment.assignment_type,
+            'deadline': assignment.deadline,
+            'module_title': assignment.module.title if assignment.module else None,
+            'questions': [],
+            'submissions': [],
+        }
+        if assignment.assignment_type == 'quiz':
+            data['questions'] = [
+                {
+                    'id': question.id,
+                    'content': question.content,
+                    'option_a': question.option_a,
+                    'option_b': question.option_b,
+                    'option_c': question.option_c,
+                    'option_d': question.option_d,
+                    'correct_option': question.correct_option,
+                }
+                for question in assignment.questions.all()
+            ]
+            data['submissions'] = [
+                {
+                    'id': submission.id,
+                    'student_name': submission.student.username,
+                    'submitted_at': submission.submitted_at,
+                    'score': submission.score,
+                    'answers': submission.answers,
+                }
+                for submission in assignment.submissions.all().order_by('student__username')
+            ]
+        else:
+            data['submissions'] = [
+                {
+                    'id': submission.id,
+                    'student_name': submission.student.username,
+                    'submitted_at': submission.submitted_at,
+                    'submitted_file': request.build_absolute_uri(submission.submitted_file.url)
+                    if submission.submitted_file else None,
+                    'score': submission.score,
+                }
+                for submission in assignment.submissions.all().order_by('student__username')
+            ]
+        return Response(data)
 
 
 class AssignmentSubmissionListView(generics.ListAPIView):
@@ -919,6 +1408,9 @@ class AssignmentSubmissionListView(generics.ListAPIView):
         ):
             return Submission.objects.filter(assignment=assignment).select_related('student').order_by('-submitted_at')
         if user.role == 'learner' and Enrollment.objects.filter(student=user, course=assignment.course).exists():
+            if not assignment.is_published or (assignment.publish_at and assignment.publish_at > timezone.now()):
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied('Bài tập chưa được mở.')
             return Submission.objects.filter(assignment=assignment, student=user).select_related('student')
         from rest_framework.exceptions import PermissionDenied
         raise PermissionDenied('Bạn không có quyền xem bài nộp này.')
@@ -932,6 +1424,8 @@ class SubmitAssignmentView(APIView):
         assignment = get_object_or_404(Assignment.objects.select_related('course'), pk=assignment_id)
         if request.user.role != 'learner':
             return Response({'error': 'Chỉ học viên mới được nộp bài.'}, status=status.HTTP_403_FORBIDDEN)
+        if not assignment.is_published or (assignment.publish_at and assignment.publish_at > timezone.now()):
+            return Response({'error': 'Bài tập chưa được mở.'}, status=status.HTTP_403_FORBIDDEN)
         if not Enrollment.objects.filter(student=request.user, course=assignment.course).exists():
             return Response({'error': 'Bạn cần đăng ký khóa học trước khi nộp bài.'}, status=status.HTTP_403_FORBIDDEN)
         if assignment.deadline and timezone.now() > assignment.deadline:
@@ -944,15 +1438,28 @@ class SubmitAssignmentView(APIView):
             questions = list(assignment.questions.all())
             if not questions:
                 return Response({'error': 'Bài trắc nghiệm chưa có câu hỏi.'}, status=status.HTTP_400_BAD_REQUEST)
+            normalized_answers = {}
+            for question in questions:
+                answer = str(answers.get(str(question.id), '')).upper()
+                if answer and answer not in ('A', 'B', 'C', 'D'):
+                    return Response(
+                        {'answers': ['Mỗi câu trả lời phải là A, B, C hoặc D.']},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                normalized_answers[str(question.id)] = answer
             correct_count = sum(
                 1 for question in questions
-                if str(answers.get(str(question.id), '')).upper() == question.correct_option.upper()
+                if normalized_answers[str(question.id)] == question.correct_option.upper()
             )
             score = round(correct_count / len(questions) * 10, 2)
             submission, _ = Submission.objects.update_or_create(
                 assignment=assignment,
                 student=request.user,
-                defaults={'score': score, 'feedback': 'Hệ thống chấm tự động'},
+                defaults={
+                    'score': score,
+                    'feedback': 'Hệ thống chấm tự động',
+                    'answers': normalized_answers,
+                },
             )
             return Response({
                 'id': submission.id,
@@ -971,4 +1478,3 @@ class SubmitAssignmentView(APIView):
             defaults={'submitted_file': uploaded_file, 'score': None, 'feedback': ''},
         )
         return Response(SubmissionSerializer(submission, context={'request': request}).data, status=status.HTTP_200_OK)
-

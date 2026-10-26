@@ -10,6 +10,9 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import CourseListPage from './pages/CourseListPage';
 import CourseDetailPage from './pages/CourseDetailPage';
+import LessonPage from './pages/LessonPage';
+import AssignmentPage from './pages/AssignmentPage';
+import InstructorAssignmentResultsPage from './pages/InstructorAssignmentResultsPage';
 import CreateCoursePage from './pages/CreateCoursePage';
 import InstructorCoursesPage from './pages/InstructorCoursesPage';
 import InstructorManageCoursePage from './pages/InstructorManageCoursePage';
@@ -66,6 +69,8 @@ function App() {
               {/* Course Directory & Detail */}
               <Route path="/courses" element={<CourseListPage />} />
               <Route path="/courses/:id" element={<CourseDetailPage />} />
+              <Route path="/courses/:id/lessons/:lessonId" element={<LessonPage />} />
+              <Route path="/courses/:id/assignments/:assignmentId" element={<AssignmentPage />} />
 
               {/* Instructor Protected Routes */}
               <Route
@@ -89,6 +94,14 @@ function App() {
                 element={
                   <ProtectedRoute allowedRoles={['instructor', 'admin']}>
                     <InstructorManageCoursePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/instructor/courses/:id/assignments/:assignmentId"
+                element={
+                  <ProtectedRoute allowedRoles={['instructor', 'admin']}>
+                    <InstructorAssignmentResultsPage />
                   </ProtectedRoute>
                 }
               />

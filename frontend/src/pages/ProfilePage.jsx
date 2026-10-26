@@ -128,7 +128,7 @@ const ProfilePage = () => {
             <ul className="divide-y divide-slate-200">
               {completedCourses.map((course) => (
                 <li key={course.id} className="flex flex-wrap items-center justify-between gap-3 py-4">
-                  <div><p className="text-xs text-slate-500">#{course.id}</p><p className="mt-1 text-sm font-semibold text-slate-900">{course.title}</p></div>
+                  <p className="text-sm font-semibold text-slate-900">{course.title}</p>
                   <span className="text-xs font-semibold text-emerald-800">Hoàn thành</span>
                 </li>
               ))}

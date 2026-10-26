@@ -220,13 +220,12 @@ const CourseListPage = () => {
       ) : (
         <>
           <div className="overflow-hidden border-y border-slate-300 bg-white">
-            <div className="hidden grid-cols-[6rem_minmax(0,2fr)_minmax(10rem,1fr)_8rem] gap-4 bg-slate-100 px-5 py-3 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600 md:grid">
-              <span>Mã</span><span>Khóa học</span><span>Giảng viên</span><span className="text-right">Truy cập</span>
+            <div className="hidden grid-cols-[minmax(0,2fr)_minmax(10rem,1fr)_8rem] gap-4 bg-slate-100 px-5 py-3 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-600 md:grid">
+              <span>Khóa học</span><span>Giảng viên</span><span className="text-right">Truy cập</span>
             </div>
             <ul className="divide-y divide-slate-200">
               {filteredCourses.map((course) => (
-                <li key={course.id} className="grid gap-3 px-4 py-4 transition-colors hover:bg-emerald-50/40 sm:px-5 md:grid-cols-[6rem_minmax(0,2fr)_minmax(10rem,1fr)_8rem] md:items-center md:gap-4">
-                  <span className="text-xs font-medium tabular-nums text-slate-500">LS-{String(course.id).padStart(4, '0')}</span>
+                <li key={course.id} className="grid gap-3 px-4 py-4 transition-colors hover:bg-emerald-50/40 sm:px-5 md:grid-cols-[minmax(0,2fr)_minmax(10rem,1fr)_8rem] md:items-center md:gap-4">
                   <div className="min-w-0">
                     <h2 className="truncate text-sm font-semibold text-slate-950">{course.title}</h2>
                     <p className="mt-1 line-clamp-1 text-xs text-slate-600">{course.description || 'Chưa có mô tả.'}</p>
