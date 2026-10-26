@@ -1,18 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { courseApi } from '../api/courseApi';
 import LoadingSpinner from '../components/LoadingSpinner';
 import {
   PlusCircle,
   BookOpen,
   Layers,
-  Users,
   Eye,
   EyeOff,
-  Edit,
   Trash2,
   Settings,
-  Sparkles,
   Search,
   CheckCircle2,
   AlertCircle,
@@ -25,8 +22,6 @@ const InstructorCoursesPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [toastMessage, setToastMessage] = useState(null);
   const [deletingCourseId, setDeletingCourseId] = useState(null);
-
-  const navigate = useNavigate();
 
   const showToast = (message, type = 'success') => {
     setToastMessage({ message, type });
@@ -209,9 +204,6 @@ const InstructorCoursesPage = () => {
                       )}
                     </span>
 
-                    <span className="text-[11px] text-slate-400 font-medium">
-                      ID: #{c.id}
-                    </span>
                   </div>
 
                   <h3 className="text-lg font-bold text-slate-900 group-hover:text-indigo-600 transition-colors line-clamp-1">

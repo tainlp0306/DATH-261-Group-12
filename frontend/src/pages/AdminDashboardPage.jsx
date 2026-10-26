@@ -568,7 +568,8 @@ const AdminDashboardPage = () => {
                             <div className="flex items-center justify-end gap-2">
                               <button
                                 onClick={() => handleToggleUserStatus(u)}
-                                disabled={togglingUserId === u.id || deletingUserId === u.id}
+                                disabled={u.id === currentUser?.id || togglingUserId === u.id || deletingUserId === u.id}
+                                title={u.id === currentUser?.id ? 'Bạn không thể khóa hoặc mở khóa tài khoản của chính mình.' : undefined}
                                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer ${
                                   isActive
                                     ? 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
@@ -639,7 +640,6 @@ const AdminDashboardPage = () => {
                 <table className="w-full text-left text-xs sm:text-sm">
                   <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[11px] tracking-wider">
                     <tr>
-                      <th className="px-5 py-3.5">ID</th>
                       <th className="px-5 py-3.5">Tên khóa học</th>
                       <th className="px-5 py-3.5">Giảng viên</th>
                       <th className="px-5 py-3.5">Chương / Bài</th>
@@ -654,7 +654,6 @@ const AdminDashboardPage = () => {
 
                       return (
                         <tr key={c.id} className="hover:bg-slate-50/70 transition-colors">
-                          <td className="px-5 py-4 font-mono text-xs text-slate-400">#{c.id}</td>
                           <td className="px-5 py-4 max-w-xs">
                             <span className="font-bold text-slate-900 block truncate">{c.title}</span>
                             <span className="text-[11px] text-slate-400 line-clamp-1">

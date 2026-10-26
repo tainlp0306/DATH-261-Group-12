@@ -111,13 +111,16 @@ const HomePage = () => {
             {notifications.map((notification) => (
               <li key={notification.id} className="grid gap-3 py-5 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                 <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="font-semibold text-slate-900">{notification.title || 'Thông báo'}</h3>
-                    {!notification.is_read && <span className="h-2 w-2 rounded-full bg-amber-600" aria-label="Chưa xác nhận" />}
-                    {notification.course && <span className="text-xs text-emerald-800">Khóa học #{notification.course}</span>}
-                  </div>
-                  <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{notification.message}</p>
-                  <time className="mt-2 block text-xs text-slate-500">{new Date(notification.created_at).toLocaleString('vi-VN')}</time>
+                  <Link to={notification.target_url || (notification.course ? `/courses/${notification.course}` : '/')} onClick={() => { if (!notification.is_read) void confirmRead(notification); }} className="block rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-800">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-semibold text-slate-900">{notification.title || 'Thông báo'}</h3>
+                      {!notification.is_read && <span className="h-2 w-2 rounded-full bg-amber-600" aria-label="Chưa xác nhận" />}
+                      {notification.course_title && <span className="text-xs text-emerald-800">Khóa học: {notification.course_title}</span>}
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap text-sm leading-6 text-slate-700">{notification.message}</p>
+                    <time className="mt-2 block text-xs text-slate-500">{new Date(notification.created_at).toLocaleString('vi-VN')}</time>
+                    <span className="mt-2 inline-block text-xs font-semibold text-emerald-800">Mở nội dung thông báo →</span>
+                  </Link>
                 </div>
                 {notification.is_read ? (
                   <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-emerald-800"><Check className="h-4 w-4" /> Đã xác nhận</span>

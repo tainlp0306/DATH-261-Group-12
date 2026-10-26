@@ -263,6 +263,7 @@ const CreateCoursePage = () => {
                   disabled={!!createdCourse}
                   onChange={setSelectedPrerequisites}
                 />
+                <span className="mt-1 block text-xs font-normal normal-case text-slate-500">Có thể chọn nhiều khóa và bỏ chọn bất kỳ lúc nào trước khi tạo.</span>
               </div>
 
               <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
@@ -294,7 +295,7 @@ const CreateCoursePage = () => {
               ) : (
                 <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-emerald-700 text-xs font-semibold">
                   <CheckCircle2 className="w-4 h-4 shrink-0" />
-                  <span>Khóa học đã tạo thành công (ID: #{createdCourse.id})</span>
+                  <span>Khóa học đã tạo thành công.</span>
                 </div>
               )}
             </form>

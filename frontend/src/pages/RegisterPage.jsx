@@ -178,11 +178,11 @@ const RegisterPage = () => {
               <input
                 type={showPassword ? 'text' : 'password'}
                 required
-                minLength={8}
+                minLength={10}
                 disabled={otpRequested}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                placeholder="Tối thiểu 8 ký tự"
+                placeholder="Tối thiểu 10 ký tự"
                 className="w-full pl-11 pr-11 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all text-sm"
               />
               <button

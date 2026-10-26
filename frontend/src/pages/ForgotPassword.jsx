@@ -100,7 +100,7 @@ const ForgotPassword = () => {
                 Mật khẩu mới
                 <input
                   type="password"
-                  minLength={8}
+                  minLength={10}
                   required
                   autoComplete="new-password"
                   value={password}
@@ -112,7 +112,7 @@ const ForgotPassword = () => {
                 Xác nhận mật khẩu mới
                 <input
                   type="password"
-                  minLength={8}
+                  minLength={10}
                   required
                   autoComplete="new-password"
                   value={confirmPassword}

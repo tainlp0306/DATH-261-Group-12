@@ -136,6 +136,8 @@ class Notification(models.Model):
     title = models.CharField(max_length=255, default='Thông báo')
     message = models.CharField(max_length=255)
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='notifications', null=True, blank=True)
+    target_url = models.CharField(max_length=500, blank=True)
+    available_at = models.DateTimeField(null=True, blank=True)
     is_read = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -162,6 +164,10 @@ class LessonPage(models.Model):
     lesson = models.ForeignKey(Lesson, on_delete=models.CASCADE, related_name='pages')
     page_number = models.IntegerField(default=1)
     content = models.TextField()
+
+    class Meta:
+        ordering = ['page_number', 'id']
+
 
 class LearningEvent(models.Model):
     LESSON_COMPLETED = 'lesson_completed'
@@ -205,6 +211,7 @@ class Intervention(models.Model):
     notification = models.ForeignKey(Notification, null=True, blank=True, on_delete=models.SET_NULL)
     created_at = models.DateTimeField(auto_now_add=True)
 
+
 class SystemLog(models.Model):
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     action = models.CharField(max_length=255)
@@ -215,10 +222,19 @@ class Assignment(models.Model):
     ASSIGNMENT_TYPES = [('quiz', 'Trắc nghiệm'), ('file', 'Bài tập nộp tệp')]
     
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='assignments')
+    module = models.ForeignKey(
+        Module,
+        on_delete=models.CASCADE,
+        related_name='assignments',
+        null=True,
+        blank=True,
+    )
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True, null=True)
+    prompt_file = models.FileField(upload_to='assignments/prompts/', blank=True, null=True)
     assignment_type = models.CharField(max_length=20, choices=ASSIGNMENT_TYPES, default='quiz')
-    
+    is_published = models.BooleanField(default=True)
+    publish_at = models.DateTimeField(blank=True, null=True)
     time_limit_minutes = models.IntegerField(blank=True, null=True) # Dành cho quiz
     deadline = models.DateTimeField(blank=True, null=True) # Hạn chót nộp bài
     
@@ -232,6 +248,7 @@ class Question(models.Model):
     option_c = models.CharField(max_length=255)
     option_d = models.CharField(max_length=255)
     correct_option = models.CharField(max_length=1)
+    attachment = models.FileField(upload_to='assignments/questions/', blank=True, null=True)
 
 class Submission(models.Model):
     assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE, related_name='submissions')
@@ -241,6 +258,7 @@ class Submission(models.Model):
     
     score = models.FloatField(blank=True, null=True)
     feedback = models.TextField(blank=True, null=True)
+    answers = models.JSONField(default=dict, blank=True)
     
     submitted_at = models.DateTimeField(auto_now_add=True)
     
@@ -248,5 +266,3 @@ class Submission(models.Model):
         unique_together = ('assignment', 'student')
 
         
-
-

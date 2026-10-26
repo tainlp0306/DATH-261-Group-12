@@ -59,11 +59,12 @@ const InstructorManageCoursePage = () => {
   const [editingLesson, setEditingLesson] = useState(null);
   const [lessonTitle, setLessonTitle] = useState('');
   const [lessonType, setLessonType] = useState('text');
-  const [lessonContent, setLessonContent] = useState('');
+  const [lessonPages, setLessonPages] = useState(['']);
   const [mediaUrl, setMediaUrl] = useState('');
   const [lessonAttachment, setLessonAttachment] = useState(null);
   const [lessonOrder, setLessonOrder] = useState(1);
   const [lessonLoading, setLessonLoading] = useState(false);
+  const [notifyLessonUpdate, setNotifyLessonUpdate] = useState(true);
   const [announcementTitle, setAnnouncementTitle] = useState('');
   const [announcementMessage, setAnnouncementMessage] = useState('');
   const [announcementLoading, setAnnouncementLoading] = useState(false);
@@ -75,6 +76,7 @@ const InstructorManageCoursePage = () => {
   const [settingsPrerequisites, setSettingsPrerequisites] = useState([]);
   const [settingsIsPublished, setSettingsIsPublished] = useState(false);
   const [settingsLoading, setSettingsLoading] = useState(false);
+  const [notifyCourseUpdates, setNotifyCourseUpdates] = useState(true);
 
   // Students Progress State
   const [studentsProgress, setStudentsProgress] = useState([]);
@@ -85,7 +87,7 @@ const InstructorManageCoursePage = () => {
     try {
       setLoading(true);
       const [data, options] = await Promise.all([
-        courseApi.getCourseDetail(id),
+        courseApi.getInstructorCourseDetail(id),
         courseApi.getPrerequisiteOptions(),
       ]);
       setCourse(data);
@@ -149,6 +151,7 @@ const InstructorManageCoursePage = () => {
         title: course.title,
         description: course.description,
         is_published: !course.is_published,
+        notify_students: notifyCourseUpdates,
       });
       setCourse((prev) => ({ ...prev, is_published: updated.is_published }));
       setSettingsIsPublished(updated.is_published);
@@ -185,6 +188,7 @@ const InstructorManageCoursePage = () => {
           course: editingModule.course,
           title: moduleTitle,
           order: Number(moduleOrder),
+          notify_students: notifyCourseUpdates,
         });
         toast.success(`Đã cập nhật chương: "${updated.title}"`);
       } else {
@@ -192,6 +196,7 @@ const InstructorManageCoursePage = () => {
           course: Number(id),
           title: moduleTitle,
           order: Number(moduleOrder),
+          notify_students: notifyCourseUpdates,
         });
         toast.success(`Đã thêm chương: "${created.title}"`);
       }
@@ -226,10 +231,11 @@ const InstructorManageCoursePage = () => {
     setEditingLesson(null);
     setLessonTitle('');
     setLessonType('text');
-    setLessonContent('');
+    setLessonPages(['']);
     setMediaUrl('');
     setLessonAttachment(null);
     setLessonOrder((mod.lessons?.length || 0) + 1);
+    setNotifyLessonUpdate(true);
     setShowLessonModal(true);
   };
 
@@ -238,16 +244,22 @@ const InstructorManageCoursePage = () => {
     setEditingLesson(lesson);
     setLessonTitle(lesson.title);
     setLessonType(lesson.lesson_type || 'text');
-    setLessonContent(lesson.content || '');
+    const pages = lesson.pages?.length
+      ? [...lesson.pages].sort((left, right) => left.page_number - right.page_number).map((page) => page.content)
+      : (lesson.content || '').split(/\s*\[\[PAGE\]\]\s*/);
+    setLessonPages(pages.length ? pages : ['']);
     setMediaUrl(lesson.media_url || '');
     setLessonAttachment(null);
     setLessonOrder(lesson.order || 1);
+    setNotifyLessonUpdate(true);
     setShowLessonModal(true);
   };
 
   const handleSaveLesson = async (e) => {
     e.preventDefault();
     if (!lessonTitle.trim() || !selectedModuleForLesson) return;
+    const content = lessonPages.map((page) => page.trim()).filter(Boolean).join('\n\n[[PAGE]]\n\n');
+    const pages = lessonPages.map((page) => page.trim()).filter(Boolean).map((page) => ({ content: page }));
 
     try {
       setLessonLoading(true);
@@ -256,10 +268,12 @@ const InstructorManageCoursePage = () => {
           module: editingLesson.module,
           title: lessonTitle,
           lesson_type: lessonType,
-          content: lessonContent,
+          content,
+          pages,
           media_url: mediaUrl,
           attached_file: lessonAttachment,
           order: Number(lessonOrder),
+          notify_students: notifyLessonUpdate,
         });
         toast.success(`Đã cập nhật bài học: "${updated.title}"`);
       } else {
@@ -267,10 +281,12 @@ const InstructorManageCoursePage = () => {
           module: selectedModuleForLesson.id,
           title: lessonTitle,
           lesson_type: lessonType,
-          content: lessonContent,
+          content,
+          pages,
           media_url: mediaUrl,
           attached_file: lessonAttachment,
           order: Number(lessonOrder),
+          notify_students: notifyLessonUpdate,
         });
         toast.success(`Đã thêm bài học: "${created.title}"`);
       }
@@ -314,6 +330,7 @@ const InstructorManageCoursePage = () => {
         description: settingsDescription,
         prerequisites: settingsPrerequisites,
         is_published: settingsIsPublished,
+        notify_students: notifyCourseUpdates,
       });
       setCourse(updated);
       toast.success('Cập nhật thông tin khóa học thành công!');
@@ -411,6 +428,10 @@ const InstructorManageCoursePage = () => {
         </Link>
 
         <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1.5 px-2 text-[11px] font-medium text-slate-600">
+            <input type="checkbox" checked={notifyCourseUpdates} onChange={(event) => setNotifyCourseUpdates(event.target.checked)} />
+            Báo học viên khi có cập nhật
+          </label>
           <Link
             to={`/courses/${course.id}`}
             target="_blank"
@@ -444,7 +465,7 @@ const InstructorManageCoursePage = () => {
       <div className="bg-white p-6 sm:p-7 rounded-3xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="space-y-1">
           <span className="text-xs font-bold text-purple-600 uppercase tracking-wider">
-            Quản lý khóa học #{course.id}
+            Quản lý khóa học
           </span>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900">
             {course.title}
@@ -728,7 +749,7 @@ const InstructorManageCoursePage = () => {
         </div>
       )}
 
-      {activeTab === 'assignments' && <InstructorAssignments courseId={Number(id)} />}
+      {activeTab === 'assignments' && <InstructorAssignments courseId={Number(id)} modules={course?.modules || []} />}
 
       {activeTab === 'analytics' && <CourseAnalytics courseId={Number(id)} />}
 
@@ -905,7 +926,9 @@ const InstructorManageCoursePage = () => {
                   options={prerequisiteOptions}
                   selectedIds={settingsPrerequisites}
                   onChange={setSettingsPrerequisites}
+                  disabled={settingsLoading}
                 />
+                <span className="mt-1 block text-xs font-normal normal-case text-slate-500">Chọn hoặc bỏ chọn nhiều khóa học.</span>
               </div>
 
               <div className="flex items-center justify-between p-3.5 bg-slate-50 rounded-xl border border-slate-200">
@@ -1101,17 +1124,28 @@ const InstructorManageCoursePage = () => {
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase text-slate-600 mb-1">
-                  Nội dung chi tiết (Văn bản / Hướng dẫn)
-                </label>
-                <textarea
-                  rows={4}
-                  value={lessonContent}
-                  onChange={(e) => setLessonContent(e.target.value)}
-                  placeholder="Soạn thảo lý thuyết, bài tập hoặc ghi chú đính kèm..."
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                />
+                <div className="flex items-center justify-between gap-3">
+                  <label className="block text-xs font-bold uppercase text-slate-600">Nội dung bài học theo trang</label>
+                  <button type="button" onClick={() => setLessonPages((current) => [...current, ''])} className="text-xs font-semibold text-indigo-700 hover:underline">+ Thêm trang</button>
+                </div>
+                <p className="mt-1 text-[11px] text-slate-500">Học viên chuyển trang và tiến độ sẽ tự lưu để có thể tiếp tục đúng vị trí.</p>
+                <div className="mt-2 space-y-3">
+                  {lessonPages.map((page, index) => (
+                    <div key={index} className="border border-slate-200 p-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        <label htmlFor={`lesson-page-${index}`} className="text-xs font-semibold text-slate-700">Trang {index + 1}</label>
+                        {lessonPages.length > 1 && <button type="button" onClick={() => setLessonPages((current) => current.filter((_, pageIndex) => pageIndex !== index))} className="text-xs font-semibold text-rose-700">Xóa trang</button>}
+                      </div>
+                      <textarea id={`lesson-page-${index}`} rows={5} value={page} onChange={(event) => setLessonPages((current) => current.map((value, pageIndex) => pageIndex === index ? event.target.value : value))} placeholder="Nhập nội dung trang này..." className="w-full border border-slate-200 bg-slate-50 px-3 py-2 text-xs sm:text-sm focus:outline-hidden focus:ring-2 focus:ring-indigo-500" />
+                    </div>
+                  ))}
+                </div>
               </div>
+
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                <input type="checkbox" checked={notifyLessonUpdate} onChange={(event) => setNotifyLessonUpdate(event.target.checked)} />
+                Gửi thông báo cho học viên khi bài học được tạo hoặc cập nhật (mặc định bật)
+              </label>
 
               <div>
                 <label className="block text-xs font-bold uppercase text-slate-600 mb-1">
