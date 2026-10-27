@@ -10,8 +10,7 @@ npm install
 Run:
 npm run dev -- --port 5174
 
-Open the URL shown in the terminal, followed by `/prototype.html`. 
-(e.g., `http://localhost:5174/prototype.html`).
+Open the URL shown in the terminal, followed by `/prototype.html`, e.g. `http://localhost:5174/prototype.html`.
 
 **Edit the prototype**
 src/pages/PracticePrototypePage.jsx - prototype content and interactions

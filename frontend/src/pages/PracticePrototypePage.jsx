@@ -134,7 +134,7 @@ function WritingPractice() {
     writerRef.current?.quiz({
       onMistake: () => {
         setMistakes((n) => n + 1);
-        setStatus('Not quite. Try again!');
+        setStatus('Try again!');
       },
       onComplete: () => {
         setCompleted(true);
@@ -187,7 +187,7 @@ function WritingPractice() {
                 writer.quiz({
                   onMistake: () => {
                     setMistakes((n) => n + 1);
-                    setStatus('Not quite. Try following the stroke direction.');
+                    setStatus('Try following the stroke direction.');
                   },
                   onCorrectStroke: (data) => {
                     setStatus(
@@ -273,7 +273,7 @@ function JapaneseWritingPractice() {
       onMistake: () => {
         if (!cancelled) {
           setMistakes((n) => n + 1);
-          setStatus('Not quite. Try following the stroke direction.');
+          setStatus('Try following the stroke direction.');
         }
       },
 

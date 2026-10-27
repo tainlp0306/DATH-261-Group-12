@@ -21,6 +21,7 @@ import ForgotPassword from './pages/ForgotPassword';
 import MyCoursesPage from './pages/MyCoursesPage';
 import HomePage from './pages/HomePage';
 import ProfilePage from './pages/ProfilePage';
+import HiraganaPracticePage from './pages/HiraganaPracticePage';
 
 function App() {
   return (
@@ -101,6 +102,12 @@ function App() {
                     <AdminDashboardPage />
                   </ProtectedRoute>
                 }
+              />
+
+              {/* Temporary Hiragana Practice Route */}
+              <Route
+                path="/dev/hiragana"
+                element={<HiraganaPracticePage />}
               />
 
               {/* Error Routes */}
