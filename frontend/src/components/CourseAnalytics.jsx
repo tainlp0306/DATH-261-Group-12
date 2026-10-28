@@ -1,194 +1,188 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
-import { analyticsApi } from '../api/analyticsApi';
+import { Activity, BellRing, TrendingDown, Users } from 'lucide-react';
+import { courseApi } from '../api/courseApi';
+import LoadingSpinner from './LoadingSpinner';
 
-const LEVEL_LABEL = {
-  ok: 'Ổn',
-  watch: 'Theo dõi',
-  at_risk: 'Chậm tiến độ',
-  critical: 'Rất chậm',
+const riskLabels = {
+  at_risk: 'Cần can thiệp',
+  watch: 'Cần theo dõi',
+  ok: 'Đúng tiến độ',
 };
 
-const LEVEL_CLASS = {
-  ok: 'bg-emerald-50 text-emerald-800',
-  watch: 'bg-amber-50 text-amber-800',
-  at_risk: 'bg-orange-50 text-orange-900',
-  critical: 'bg-red-50 text-red-800',
+const riskStyles = {
+  at_risk: 'bg-rose-50 text-rose-800 border-rose-200',
+  watch: 'bg-amber-50 text-amber-800 border-amber-200',
+  ok: 'bg-emerald-50 text-emerald-800 border-emerald-200',
 };
 
-const percent = (ratio) => (ratio == null ? '—' : `${Math.round(ratio * 100)}%`);
+const percent = (value) => `${Math.round((value || 0) * 100)}%`;
 
-const CourseAnalytics = ({ courseId }) => {
-  const [overview, setOverview] = useState(null);
-  const [rows, setRows] = useState([]);
-  const [level, setLevel] = useState('at_risk');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [openReasons, setOpenReasons] = useState(null);
-  const [sending, setSending] = useState('');
-
-  const load = async (nextLevel = level) => {
-    setLoading(true);
-    setError('');
-    try {
-      const [overviewData, riskData] = await Promise.all([
-        analyticsApi.getOverview(courseId),
-        analyticsApi.getAtRisk(courseId, nextLevel),
-      ]);
-      setOverview(overviewData);
-      setRows(riskData.results || []);
-    } catch (err) {
-      const message = err.response?.data?.error || 'Không tải được phân tích lớp.';
-      setError(message);
-    } finally {
-      setLoading(false);
-    }
-  };
+export default function CourseAnalytics({ courseId }) {
+  const [report, setReport] = useState(null);
+  const [loadedCourseId, setLoadedCourseId] = useState(null);
+  const [sending, setSending] = useState(null);
 
   useEffect(() => {
-    load(level);
-  }, [courseId, level]);
+    let active = true;
+    const loadReport = async () => {
+      try {
+        const data = await courseApi.getCourseAnalytics(courseId);
+        if (active) setReport(data);
+      } catch (error) {
+        if (active) {
+          console.error('Failed to load course analytics:', error);
+          setReport(null);
+          toast.error(error.response?.data?.detail || 'Không thể tải phân tích khóa học.');
+        }
+      } finally {
+        if (active) setLoadedCourseId(courseId);
+      }
+    };
+    loadReport();
+    return () => { active = false; };
+  }, [courseId]);
 
-  const send = async (row, action) => {
-    const key = `${row.username}-${action}`;
-    setSending(key);
+  const sendReminder = async (student) => {
+    setSending(student.student_id);
     try {
-      const result = await analyticsApi.intervene(courseId, row.student_id, action);
-      toast.success(result.deduplicated ? 'Đã nhắc trong 24 giờ qua.' : 'Đã gửi nhắc.');
-    } catch (err) {
-      toast.error(err.response?.data?.action?.[0] || err.response?.data?.error || 'Không gửi được.');
+      const result = await courseApi.interveneCourseLearner(courseId, student.student_id);
+      toast.success(result.deduplicated ? 'Đã gửi nhắc học viên trong 24 giờ qua.' : 'Đã gửi thông báo nhắc tiến độ.');
+    } catch (error) {
+      toast.error(error.response?.data?.action?.[0] || error.response?.data?.detail || 'Không thể gửi thông báo.');
     } finally {
-      setSending('');
+      setSending(null);
     }
   };
 
-  if (loading) {
-    return <p className="py-8 text-sm text-slate-500">Đang tải phân tích...</p>;
-  }
-  if (error) {
-    return <p className="py-8 text-sm text-rose-700" data-testid="analytics-error">{error}</p>;
-  }
-  if (!overview) return null;
+  if (loadedCourseId !== courseId) return <LoadingSpinner text="Đang tổng hợp dữ liệu học tập..." />;
+  if (!report) return <p className="py-8 text-center text-sm text-slate-500">Chưa thể hiển thị báo cáo.</p>;
 
   return (
-    <div className="space-y-6" data-testid="course-analytics">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi label="Ghi danh" value={overview.enrolled_count} testId="kpi-enrolled" />
-        <Kpi label="Hoàn thành TB" value={percent(overview.mean_completion_ratio)} testId="kpi-completion" />
-        <Kpi label="Ghi nhớ TB" value={overview.mean_retention == null ? '—' : Math.round(overview.mean_retention)} testId="kpi-retention" />
-        <Kpi label="Chậm tiến độ" value={overview.at_risk_count} testId="kpi-at-risk-count" />
+    <section className="space-y-6" aria-labelledby="course-analytics-title">
+      <header className="border-b border-slate-200 pb-4">
+        <p className="text-xs font-bold uppercase tracking-wider text-indigo-700">Learning analytics & early warning</p>
+        <h2 id="course-analytics-title" className="mt-1 text-xl font-semibold text-slate-950">Tiến độ và cảnh báo sớm</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Mốc tham chiếu tiến độ là 28 ngày; đây là tín hiệu hỗ trợ giảng viên, không phải kết luận về năng lực học viên.
+        </p>
+      </header>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-500"><Users className="h-4 w-4" /> Học viên ghi danh</div>
+          <p className="mt-2 text-2xl font-bold text-slate-900">{report.enrolled_count}</p>
+        </div>
+        <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
+          <div className="flex items-center gap-2 text-xs font-semibold text-rose-800"><BellRing className="h-4 w-4" /> Cần can thiệp</div>
+          <p className="mt-2 text-2xl font-bold text-rose-900">{report.risk_counts.at_risk}</p>
+        </div>
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+          <div className="flex items-center gap-2 text-xs font-semibold text-amber-800"><TrendingDown className="h-4 w-4" /> Cần theo dõi</div>
+          <p className="mt-2 text-2xl font-bold text-amber-900">{report.risk_counts.watch}</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4">
+          <div className="flex items-center gap-2 text-xs font-semibold text-slate-500"><Activity className="h-4 w-4" /> Hoàn thành trung bình</div>
+          <p className="mt-2 text-2xl font-bold text-slate-900">{percent(report.mean_completion_ratio)}</p>
+        </div>
       </div>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="progress-chart">
-        <h3 className="text-sm font-bold text-slate-900">Tiến độ lớp theo tuần</h3>
-        <p className="mt-1 text-xs text-slate-500">Đường trung vị bài đã hoàn thành, so với kế hoạch 28 ngày.</p>
-        <div className="mt-4 space-y-2">
-          {overview.weekly_progress.every((point) => !point.median_completion) ? (
-            <p className="text-sm text-slate-500">Chưa có nhật ký hoàn thành bài.</p>
-          ) : overview.weekly_progress.map((point) => (
-            <div key={point.week_start} className="grid grid-cols-[6.5rem_1fr_auto] items-center gap-2 text-xs">
-              <span className="text-slate-500">{point.week_start}</span>
-              <div className="h-2 rounded-full bg-slate-100">
+      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5" aria-labelledby="analytics-timeline-title">
+        <h3 id="analytics-timeline-title" className="font-semibold text-slate-900">Diễn biến học tập theo tuần</h3>
+        <p className="mt-1 text-xs text-slate-500">Tỷ lệ hoàn thành trung vị, mốc tham chiếu và điểm quiz trung bình trong tuần.</p>
+        <div className="mt-5 grid grid-cols-4 gap-3 sm:grid-cols-8">
+          {report.weekly_progress.map((week) => (
+            <div key={week.week_start} className="flex flex-col items-center gap-2">
+              <div className="flex h-32 w-full items-end justify-center gap-1 border-b border-slate-200 bg-slate-50 px-1">
                 <div
-                  className="h-2 rounded-full bg-indigo-600"
-                  style={{ width: `${Math.round((point.median_completion || 0) * 100)}%` }}
+                  title={`Hoàn thành: ${percent(week.median_completion)}`}
+                  className="w-3 rounded-t bg-indigo-600"
+                  style={{ height: `${Math.max((week.median_completion || 0) * 100, 2)}%` }}
                 />
+                <div
+                  title={`Kỳ vọng: ${percent(week.expected_completion)}`}
+                  className="w-3 rounded-t bg-slate-300"
+                  style={{ height: `${Math.max((week.expected_completion || 0) * 100, 2)}%` }}
+                />
+                {week.mean_quiz_score != null && (
+                  <div
+                    title={`Điểm quiz trung bình: ${week.mean_quiz_score.toFixed(1)}/10 (${week.quiz_attempt_count} lượt)`}
+                    className="w-3 rounded-t bg-teal-500"
+                    style={{ height: `${Math.max((week.mean_quiz_score / 10) * 100, 2)}%` }}
+                  />
+                )}
               </div>
-              <span className="font-semibold text-slate-800">{percent(point.median_completion)}</span>
+              <span className="text-[10px] text-slate-500">{new Date(`${week.week_start}T00:00:00`).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}</span>
             </div>
           ))}
         </div>
-      </section>
-
-      <section className="rounded-2xl border border-slate-200 bg-white p-4" data-testid="completion-buckets">
-        <h3 className="text-sm font-bold text-slate-900">Phân bố hoàn thành</h3>
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {overview.completion_buckets.map((bucket) => (
-            <div key={bucket.label} className="rounded-xl bg-slate-50 px-3 py-2">
-              <p className="text-xs text-slate-500">{bucket.label}%</p>
-              <p className="text-lg font-black text-slate-900">{bucket.count}</p>
-            </div>
-          ))}
+        <div className="mt-3 flex flex-wrap gap-4 text-xs text-slate-600">
+          <span className="inline-flex items-center gap-2"><i className="h-2.5 w-2.5 bg-indigo-600" /> Thực tế</span>
+          <span className="inline-flex items-center gap-2"><i className="h-2.5 w-2.5 bg-slate-300" /> Mốc tham chiếu 28 ngày</span>
+          <span className="inline-flex items-center gap-2"><i className="h-2.5 w-2.5 bg-teal-500" /> Điểm quiz TB/10</span>
         </div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h3 className="text-sm font-bold text-slate-900">Học viên cần chú ý</h3>
-          <label className="text-xs font-semibold text-slate-600">
-            Lọc
-            <select
-              value={level}
-              onChange={(event) => setLevel(event.target.value)}
-              className="ml-2 rounded-lg border border-slate-200 bg-white px-2 py-1"
-              data-testid="risk-filter"
-            >
-              <option value="at_risk">Chậm và rất chậm</option>
-              <option value="watch">Theo dõi</option>
-              <option value="all">Tất cả</option>
-            </select>
-          </label>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white" aria-labelledby="analytics-students-title">
+        <div className="border-b border-slate-200 px-4 py-4">
+          <h3 id="analytics-students-title" className="font-semibold text-slate-900">Học viên và lý do cảnh báo</h3>
+          <p className="mt-1 text-xs text-slate-500">Các quy tắc dựa trên tiến độ sau 14 ngày, chuỗi điểm quiz thấp và 7 ngày không hoạt động.</p>
         </div>
-        {rows.length === 0 ? (
-          <p className="py-8 text-center text-sm text-slate-500">Không có học viên ở mức này.</p>
+        {report.students.length === 0 ? (
+          <p className="p-6 text-sm text-slate-500">Chưa có học viên ghi danh để phân tích.</p>
         ) : (
-          <ul className="mt-3 divide-y divide-slate-100" data-testid="at-risk-table">
-            {rows.map((row) => (
-              <li key={row.student_id} className="py-3" data-testid={`at-risk-row-${row.username}`}>
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div>
-                    <p className="font-semibold text-slate-900">{row.full_name}</p>
-                    <p className="mt-1 text-xs text-slate-500">
-                      Xong {percent(row.completion_ratio)} · Nghỉ {row.days_since_last_active} ngày · Quiz TB {row.avg_quiz_score == null ? '—' : Number(row.avg_quiz_score).toFixed(1)} · Nhớ {row.retention_score == null ? '—' : row.retention_score}
-                    </p>
-                    <p className="mt-1 text-sm text-slate-700">{row.reasons[0]?.text || 'Chưa có cờ cảnh báo.'}</p>
-                    {openReasons === row.username && (
-                      <ul className="mt-2 space-y-1 text-xs text-slate-600" data-testid={`at-risk-reasons-${row.username}`}>
-                        {row.reasons.map((reason) => <li key={reason.code}>{reason.text}</li>)}
-                      </ul>
-                    )}
-                    {row.reasons.length > 1 && (
-                      <button type="button" className="mt-1 text-xs font-semibold text-indigo-700" onClick={() => setOpenReasons(openReasons === row.username ? null : row.username)}>
-                        {openReasons === row.username ? 'Ẩn lý do' : 'Xem lý do'}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Học viên</th>
+                  <th className="px-4 py-3">Tiến độ</th>
+                  <th className="px-4 py-3">Hoạt động gần nhất</th>
+                  <th className="px-4 py-3">Trạng thái và giải thích</th>
+                  <th className="px-4 py-3">Can thiệp</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {report.students.map((student) => (
+                  <tr key={student.student_id} data-testid={`analytics-student-${student.student_id}`} className="align-top">
+                    <td className="px-4 py-4">
+                      <p className="font-semibold text-slate-900">{student.full_name}</p>
+                      <p className="text-xs text-slate-500">{student.username}</p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="font-medium text-slate-800">{student.completed_lessons}/{student.total_lessons} bài · {percent(student.completion_ratio)}</p>
+                      <p className="mt-1 text-xs text-slate-500">Điểm quiz TB: {student.avg_quiz_score == null ? 'Chưa có' : `${student.avg_quiz_score.toFixed(1)}/10`}</p>
+                    </td>
+                    <td className="px-4 py-4 text-slate-700">
+                      {student.days_since_last_active === 0 ? 'Hôm nay' : `${student.days_since_last_active} ngày trước`}
+                    </td>
+                    <td className="px-4 py-4">
+                      <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${riskStyles[student.risk_level]}`}>
+                        {riskLabels[student.risk_level]}
+                      </span>
+                      {student.reasons.length > 0 ? (
+                        <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-slate-600">
+                          {student.reasons.map((reason) => <li key={reason.code}>{reason.text}</li>)}
+                        </ul>
+                      ) : <p className="mt-2 text-xs text-slate-500">Chưa có dấu hiệu cảnh báo theo các quy tắc hiện tại.</p>}
+                    </td>
+                    <td className="px-4 py-4">
+                      <button
+                        type="button"
+                        disabled={!student.reasons.length || sending === student.student_id}
+                        onClick={() => sendReminder(student)}
+                        className="rounded-lg border border-indigo-200 px-3 py-2 text-xs font-semibold text-indigo-800 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40"
+                      >
+                        {sending === student.student_id ? 'Đang gửi…' : 'Gửi nhắc'}
                       </button>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className={`rounded-full px-2 py-1 text-xs font-bold ${LEVEL_CLASS[row.risk_level]}`}>{LEVEL_LABEL[row.risk_level]}</span>
-                    <button
-                      type="button"
-                      data-testid={`intervene-notify-${row.username}`}
-                      disabled={!row.suggested_actions.includes('notify') || sending === `${row.username}-notify`}
-                      onClick={() => send(row, 'notify')}
-                      className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
-                    >
-                      Gửi nhắc
-                    </button>
-                    <button
-                      type="button"
-                      data-testid={`intervene-review-${row.username}`}
-                      disabled={!row.suggested_actions.includes('suggest_review') || sending === `${row.username}-suggest_review`}
-                      onClick={() => send(row, 'suggest_review')}
-                      className="rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 disabled:cursor-not-allowed disabled:text-slate-400"
-                    >
-                      Gợi ý ôn
-                    </button>
-                  </div>
-                </div>
-              </li>
-            ))}
-          </ul>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </section>
-    </div>
+    </section>
   );
-};
-
-const Kpi = ({ label, value, testId }) => (
-  <div className="rounded-2xl border border-slate-200 bg-white p-4">
-    <p className="text-xs font-semibold text-slate-500">{label}</p>
-    <p className="mt-1 text-2xl font-black text-slate-900" data-testid={testId}>{value}</p>
-  </div>
-);
-
-export default CourseAnalytics;
+}

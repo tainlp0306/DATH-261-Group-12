@@ -26,6 +26,13 @@ from .views import (
 from .analytics_views import (
     CourseAnalyticsOverviewView, CourseAtRiskView, CourseInterveneView, MyAnalyticsView,
 )
+from .advanced_views import (
+    CourseAnalyticsView,
+    CourseInterventionView,
+    CourseLearningActivityListCreateView,
+    LearningActivityAttemptView,
+    LearningActivityDetailView,
+)
 
 urlpatterns = [
     path('register/', RegisterView.as_view(), name='register'),
@@ -90,8 +97,13 @@ urlpatterns = [
     path('assignments/<int:assignment_id>/grading/', AssignmentGradingView.as_view(), name='assignment_grading'),
     path('courses/<int:course_id>/analytics/overview/', CourseAnalyticsOverviewView.as_view(), name='course_analytics_overview'),
     path('courses/<int:course_id>/analytics/at-risk/', CourseAtRiskView.as_view(), name='course_analytics_at_risk'),
-    path('courses/<int:course_id>/analytics/intervene/', CourseInterveneView.as_view(), name='course_analytics_intervene'),
+    path('courses/<int:course_id>/analytics/practice-intervene/', CourseInterveneView.as_view(), name='course_analytics_intervene'),
     path('me/analytics/', MyAnalyticsView.as_view(), name='my_analytics'),
     path('courses/<int:course_id>/vocabulary/', CourseVocabularyListCreateView.as_view(), name='course_vocabulary'),
     path('vocabulary/<int:vocabulary_id>/practice/', PracticeAttemptView.as_view(), name='practice_attempt'),
+    path('courses/<int:course_id>/analytics/', CourseAnalyticsView.as_view(), name='course_analytics'),
+    path('courses/<int:course_id>/analytics/intervene/', CourseInterventionView.as_view(), name='course_intervention'),
+    path('courses/<int:course_id>/activities/', CourseLearningActivityListCreateView.as_view(), name='course_learning_activities'),
+    path('activities/<int:activity_id>/', LearningActivityDetailView.as_view(), name='learning_activity_detail'),
+    path('activities/<int:activity_id>/attempts/', LearningActivityAttemptView.as_view(), name='learning_activity_attempt'),
 ]

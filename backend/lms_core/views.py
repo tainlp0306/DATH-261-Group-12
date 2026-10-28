@@ -43,6 +43,8 @@ def user_manages_course(user, course):
     if user.role == 'admin':
         return True
     return user.role == 'instructor' and course.instructor_id == user.id
+
+
 from .models import (
     AdminLog, Comment, Course, EmailOTP, Enrollment, Lesson, LessonPage, LessonProgress, Module,
     Notification, Quiz, Question, QuizSubmission, Report, Test, TestSubmission, User,
@@ -636,6 +638,12 @@ class EnrollmentListCreateView(generics.ListCreateAPIView):
             return Response({"message": "Bạn đã đăng ký khóa học này rồi"}, status=status.HTTP_400_BAD_REQUEST)
 
         enrollment = Enrollment.objects.create(student=request.user, course=course)
+        log_learning_event(
+            actor=request.user,
+            course=course,
+            event_type='enrolled',
+            payload={'enrollment_id': enrollment.id},
+        )
         serializer = self.get_serializer(enrollment)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -1563,6 +1571,13 @@ class SubmitAssignmentView(APIView):
             assignment=assignment,
             student=request.user,
             defaults={'submitted_file': uploaded_file, 'score': None, 'feedback': ''},
+        )
+        log_learning_event(
+            actor=request.user,
+            course=assignment.course,
+            assignment=assignment,
+            event_type='file_submitted',
+            payload={'assignment_id': assignment.id},
         )
         return Response(SubmissionSerializer(submission, context={'request': request}).data, status=status.HTTP_200_OK)
 

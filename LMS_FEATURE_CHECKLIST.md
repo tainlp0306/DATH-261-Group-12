@@ -177,6 +177,13 @@ Các mục dưới đây đã được cập nhật trong code. Những thao tá
 | Thông báo cập nhật có điều hướng | Course/module/lesson/assignment/điểm có target; instructor mặc định gửi và có thể tắt với lesson/assignment/course updates | API regression tests/build passed; chưa xác nhận thủ công |
 | AI | Đã loại khỏi phạm vi theo quyết định giảm tải; không triển khai AI/RAG | — |
 
+## Thành phần nâng cao (đang triển khai)
+
+| Thành phần | Phạm vi đã tích hợp | Trạng thái xác minh / giới hạn |
+|---|---|---|
+| Learning Analytics & Early Warning | Ghi nhận sự kiện học tập theo thời gian; biểu đồ tiến độ và điểm quiz theo tuần; giải thích cảnh báo theo các quy tắc minh bạch; nhắc học viên có chống gửi trùng 24 giờ; lệnh `seed_analytics_demo` tạo cohort mô phỏng 24 học viên. | Có API tests cho quyền truy cập, giải thích rủi ro, lịch sử điểm quiz (gồm quiz ngắn) và nhắc học viên. Cần chạy lại với PostgreSQL/Docker và kiểm tra giao diện thực tế. Biểu đồ dùng lịch sử sự kiện từ khi tính năng được triển khai; dữ liệu cũ chỉ có thể dùng trạng thái tiến độ/kết quả hiện tại làm mốc gần nhất, không phải lịch sử đầy đủ. |
+| Hoạt động luyện tập ngắn tái sử dụng | Instructor tạo/sửa/publish hoạt động trắc nghiệm, gõ từ vựng hoặc luyện viết ký tự; learner đã ghi danh làm bài; có chấm điểm trắc nghiệm/từ vựng và lưu nét viết. `seed_demo_data` tạo ví dụ của cả ba dạng. | Có API tests cho tạo bài, quyền truy cập, chấm điểm và lưu nét viết; chưa xác nhận thủ công trên trình duyệt. Nét viết được lưu nhưng không có nhận dạng/chấm tự động hình dạng chữ. |
+
 ## Ghi nhận lỗi đã xử lý
 
 | Ngày | Vấn đề | Vai trò bị ảnh hưởng | Nguyên nhân | Xử lý |

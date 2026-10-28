@@ -7,6 +7,7 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import InstructorAssignments from '../components/InstructorAssignments';
 import CourseAnalytics from '../components/CourseAnalytics';
 import VocabularyEditor from '../components/VocabularyEditor';
+import InstructorActivityManager from '../components/InstructorActivityManager';
 import {
   ArrowLeft,
   Layers,
@@ -33,6 +34,7 @@ import {
   Link2,
   Megaphone,
   Activity,
+  Zap,
 } from 'lucide-react';
 
 const InstructorManageCoursePage = () => {
@@ -546,7 +548,7 @@ const InstructorManageCoursePage = () => {
               : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          <Activity className="w-4 h-4" /> Phân tích
+          <Activity className="w-4 h-4" /> Phân tích & cảnh báo
         </button>
 
         <button
@@ -560,6 +562,18 @@ const InstructorManageCoursePage = () => {
           }`}
         >
           <BookOpen className="w-4 h-4" /> Luyện tập
+        </button>
+        <button
+          type="button"
+          data-testid="tab-activities"
+          onClick={() => setActiveTab('activities')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+            activeTab === 'activities'
+              ? 'bg-indigo-600 text-white shadow-sm'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <Zap className="w-4 h-4" /> Bài luyện ngắn
         </button>
 
         <button
@@ -754,6 +768,7 @@ const InstructorManageCoursePage = () => {
       {activeTab === 'analytics' && <CourseAnalytics courseId={Number(id)} />}
 
       {activeTab === 'vocabulary' && <VocabularyEditor courseId={id} />}
+      {activeTab === 'activities' && <InstructorActivityManager courseId={Number(id)} modules={course?.modules || []} />}
 
       {activeTab === 'announcements' && (
         <section className="max-w-2xl space-y-5">

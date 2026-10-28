@@ -11,6 +11,8 @@ from lms_core.models import (
     Comment,
     Course,
     Enrollment,
+    LearningActivity,
+    LearningActivityItem,
     Lesson,
     LessonPage,
     LessonProgress,
@@ -124,6 +126,52 @@ class Command(BaseCommand):
                 'order': 2,
             },
         )
+
+        activity_specs = [
+            {
+                'title': 'DEMO - Chọn đáp án nhanh',
+                'activity_type': LearningActivity.QUIZ,
+                'module': module_one,
+                'items': [
+                    ('Which word means "xin chào"?', 'Hello', ['Hello', 'Goodbye', 'Thanks']),
+                    ('Choose the correct phrase.', 'My name is Anna.', ['My name is Anna.', 'Name my Anna.', 'I name Anna.']),
+                ],
+            },
+            {
+                'title': 'DEMO - Gõ từ vựng',
+                'activity_type': LearningActivity.VOCABULARY,
+                'module': module_two,
+                'items': [
+                    ('Gõ từ tiếng Anh: lời chào', 'greeting', []),
+                    ('Gõ từ tiếng Anh: lớp học', 'classroom', []),
+                ],
+            },
+            {
+                'title': 'DEMO - Luyện viết ký tự',
+                'activity_type': LearningActivity.WRITING,
+                'module': module_two,
+                'items': [('Viết ký tự mẫu', 'あ', [])],
+            },
+        ]
+        for spec in activity_specs:
+            items = spec.pop('items')
+            activity, _ = LearningActivity.objects.update_or_create(
+                course=course,
+                title=spec['title'],
+                defaults={
+                    **spec,
+                    'created_by': instructor,
+                    'description': 'Hoạt động ngắn mẫu để kiểm tra luồng luyện tập.',
+                    'is_published': True,
+                },
+            )
+            for index, (prompt, answer, choices) in enumerate(items, start=1):
+                LearningActivityItem.objects.update_or_create(
+                    activity=activity,
+                    prompt=prompt,
+                    defaults={'answer': answer, 'options': choices, 'order': index},
+                )
+            activity.items.exclude(prompt__in=[item[0] for item in items]).delete()
 
         if not slide_lesson.attached_file:
             slide_lesson.attached_file.save(
@@ -269,6 +317,7 @@ class Command(BaseCommand):
         self.stdout.write(f'Tài khoản demo dùng chung mật khẩu: {password}')
         self.stdout.write('Tài khoản: demo_admin, demo_instructor, demo_learner, demo_learner2')
         self.stdout.write(f'Khóa học chính: /courses/{course.pk}')
+        self.stdout.write('Hoạt động luyện tập mẫu: trắc nghiệm, từ vựng và luyện viết ký tự.')
         self.stdout.write(f'Khóa học draft: /courses/{prerequisite.pk} (chỉ admin, giảng viên sở hữu hoặc học viên đã ghi danh xem được)')
 
     @staticmethod
