@@ -11,7 +11,11 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
-from .models import AdminLog, Assignment, Comment, Course, Enrollment, Lesson, LessonProgress, Module, Notification, Question, Report, Submission, Test, TestSubmission
+from .models import (
+	AdminLog, Assignment, Comment, Course, Enrollment, Intervention, LearningActivity,
+	LearningActivityAttempt, LearningActivityItem, LearningEvent, Lesson, LessonProgress,
+	Module, Notification, Question, Report, Submission, Test, TestSubmission,
+)
 
 User = get_user_model()
 
@@ -898,3 +902,261 @@ class AssignmentAssessmentApiTests(APITestCase):
 		self.assertEqual(submission.score, 8.5)
 		self.assertEqual(submission.feedback, 'Good work')
 		self.assertTrue(Notification.objects.filter(user=self.learner, course=self.course).exists())
+
+
+class AdvancedComponentsApiTests(APITestCase):
+	def setUp(self):
+		self.instructor = User.objects.create_user(
+			username='advanced-instructor', password='test-password', role='instructor',
+		)
+		self.other_instructor = User.objects.create_user(
+			username='other-advanced-instructor', password='test-password', role='instructor',
+		)
+		self.learner = User.objects.create_user(
+			username='advanced-learner', password='test-password', role='learner',
+		)
+		self.course = Course.objects.create(
+			title='Advanced components course',
+			description='Test course',
+			instructor=self.instructor,
+			is_published=True,
+		)
+		self.module = Module.objects.create(course=self.course, title='Practice module')
+		self.lesson = Lesson.objects.create(module=self.module, title='Lesson one')
+		self.lesson_two = Lesson.objects.create(module=self.module, title='Lesson two')
+		self.enrollment = Enrollment.objects.create(student=self.learner, course=self.course)
+
+	def test_analytics_explains_risk_and_limits_dashboard_to_course_owner(self):
+		Enrollment.objects.filter(pk=self.enrollment.pk).update(
+			enrolled_at=timezone.now() - timedelta(days=18),
+		)
+		progress = LessonProgress.objects.create(
+			student=self.learner,
+			lesson=self.lesson,
+			is_completed=True,
+		)
+		LessonProgress.objects.filter(pk=progress.pk).update(
+			updated_at=timezone.now() - timedelta(days=1),
+		)
+		for index, score in enumerate((3, 4)):
+			assignment = Assignment.objects.create(
+				course=self.course,
+				title=f'Risk quiz {index + 1}',
+				assignment_type='quiz',
+			)
+			submitted_at = timezone.now() - timedelta(days=3 - index)
+			submission = Submission.objects.create(
+				assignment=assignment,
+				student=self.learner,
+				score=score,
+			)
+			Submission.objects.filter(pk=submission.pk).update(submitted_at=submitted_at)
+			LearningEvent.objects.create(
+				actor=self.learner,
+				course=self.course,
+				assignment=assignment,
+				event_type=LearningEvent.QUIZ_SUBMITTED,
+				payload={'score': score, 'assignment_id': assignment.id},
+				occurred_at=submitted_at,
+			)
+		activity = LearningActivity.objects.create(
+			course=self.course,
+			module=self.module,
+			created_by=self.instructor,
+			title='Short quiz',
+			activity_type=LearningActivity.QUIZ,
+			is_published=True,
+		)
+		LearningActivityAttempt.objects.create(
+			activity=activity,
+			student=self.learner,
+			score=2,
+			completed_items=1,
+			total_items=1,
+		)
+
+		self.client.force_authenticate(self.instructor)
+		response = self.client.get(reverse('course_analytics', args=[self.course.pk]))
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response.data['enrolled_count'], 1)
+		row = response.data['students'][0]
+		self.assertEqual(row['risk_level'], 'at_risk')
+		self.assertIn('quiz_failures', [reason['code'] for reason in row['reasons']])
+		self.assertEqual(row['quiz_count'], 3)
+		self.assertEqual(len(response.data['weekly_progress']), 8)
+		self.assertAlmostEqual(response.data['weekly_progress'][-1]['mean_quiz_score'], 3.0)
+
+		self.client.force_authenticate(self.other_instructor)
+		self.assertEqual(
+			self.client.get(reverse('course_analytics', args=[self.course.pk])).status_code,
+			status.HTTP_403_FORBIDDEN,
+		)
+
+	def test_instructor_intervention_notifies_at_risk_student_once_per_24_hours(self):
+		Enrollment.objects.filter(pk=self.enrollment.pk).update(
+			enrolled_at=timezone.now() - timedelta(days=18),
+		)
+		for lesson in (self.lesson, self.lesson_two):
+			lesson_progress = LessonProgress.objects.create(
+				student=self.learner,
+				lesson=lesson,
+				is_completed=False,
+			)
+			LessonProgress.objects.filter(pk=lesson_progress.pk).update(
+				updated_at=timezone.now() - timedelta(days=10),
+			)
+
+		self.client.force_authenticate(self.instructor)
+		url = reverse('course_intervention', args=[self.course.pk])
+		first = self.client.post(url, {'student_id': self.learner.pk, 'action': 'notify'}, format='json')
+		self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+		self.assertFalse(first.data['deduplicated'])
+		notification = Notification.objects.get(pk=first.data['notification_id'])
+		self.assertEqual(notification.target_url, f'/courses/{self.course.pk}')
+		second = self.client.post(url, {'student_id': self.learner.pk, 'action': 'notify'}, format='json')
+		self.assertEqual(second.status_code, status.HTTP_200_OK)
+		self.assertTrue(second.data['deduplicated'])
+		self.assertEqual(Intervention.objects.filter(course=self.course).count(), 1)
+
+	def test_activity_creation_visibility_scoring_and_enrollment_permissions(self):
+		self.client.force_authenticate(self.instructor)
+		response = self.client.post(
+			reverse('course_learning_activities', args=[self.course.pk]),
+			{
+				'title': 'Vocabulary check',
+				'description': 'Practice short answers',
+				'activity_type': 'vocabulary',
+				'is_published': True,
+				'items': [
+					{'prompt': 'Type hello', 'answer': 'Hello'},
+					{'prompt': 'Type goodbye', 'answer': 'Goodbye'},
+				],
+			},
+			format='json',
+		)
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+		activity_id = response.data['id']
+		self.assertEqual(response.data['items'][0]['answer'], 'Hello')
+		self.assertEqual(
+			[question['order'] for question in response.data['items']],
+			[1, 2],
+		)
+		updated = self.client.patch(
+			reverse('learning_activity_detail', args=[activity_id]),
+			{
+				'items': [
+					{'prompt': 'Type goodbye', 'answer': 'Goodbye'},
+					{'prompt': 'Type hello', 'answer': 'Hello'},
+				],
+			},
+			format='json',
+		)
+		self.assertEqual(updated.status_code, status.HTTP_200_OK, updated.data)
+		self.assertEqual(
+			[question['order'] for question in updated.data['items']],
+			[1, 2],
+		)
+
+		self.client.force_authenticate(self.learner)
+		activity = self.client.get(reverse('learning_activity_detail', args=[activity_id]))
+		self.assertEqual(activity.status_code, status.HTTP_200_OK)
+		self.assertNotIn('answer', activity.data['items'][0])
+		attempt = self.client.post(
+			reverse('learning_activity_attempt', args=[activity_id]),
+			{'responses': [
+				{'item_id': activity.data['items'][0]['id'], 'answer': ' goodbye '},
+				{'item_id': activity.data['items'][1]['id'], 'answer': 'wrong'},
+			]},
+			format='json',
+		)
+		self.assertEqual(attempt.status_code, status.HTTP_201_CREATED, attempt.data)
+		self.assertEqual(attempt.data['score'], 5.0)
+		self.assertEqual(attempt.data['completed_items'], 2)
+		self.assertEqual(LearningEvent.objects.filter(
+			actor=self.learner,
+			event_type=LearningEvent.ACTIVITY_SUBMITTED,
+		).count(), 1)
+
+		unenrolled = User.objects.create_user(
+			username='unenrolled-learner', password='test-password', role='learner',
+		)
+		self.client.force_authenticate(unenrolled)
+		self.assertEqual(
+			self.client.get(reverse('learning_activity_detail', args=[activity_id])).status_code,
+			status.HTTP_403_FORBIDDEN,
+		)
+
+	def test_published_course_outline_hides_other_instructors_drafts(self):
+		published_assignment = Assignment.objects.create(
+			course=self.course,
+			module=self.module,
+			title='Published assignment',
+			assignment_type='quiz',
+			is_published=True,
+		)
+		draft_assignment = Assignment.objects.create(
+			course=self.course,
+			module=self.module,
+			title='Private draft assignment',
+			assignment_type='quiz',
+			is_published=False,
+		)
+		published = LearningActivity.objects.create(
+			course=self.course,
+			module=self.module,
+			created_by=self.instructor,
+			title='Published activity',
+			activity_type=LearningActivity.QUIZ,
+			is_published=True,
+		)
+		draft = LearningActivity.objects.create(
+			course=self.course,
+			module=self.module,
+			created_by=self.instructor,
+			title='Private draft activity',
+			activity_type=LearningActivity.QUIZ,
+			is_published=False,
+		)
+		self.client.force_authenticate(self.other_instructor)
+		response = self.client.get(reverse('course_detail', args=[self.course.pk]))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		outline = response.data['modules'][0]
+		self.assertEqual([item['id'] for item in outline['assignments']], [published_assignment.pk])
+		self.assertNotIn(draft_assignment.pk, [item['id'] for item in outline['assignments']])
+		self.assertEqual([item['id'] for item in outline['activities']], [published.pk])
+		self.assertNotIn(draft.pk, [item['id'] for item in outline['activities']])
+
+	def test_writing_activity_records_strokes_without_claiming_automatic_accuracy(self):
+		self.client.force_authenticate(self.instructor)
+		response = self.client.post(
+			reverse('course_learning_activities', args=[self.course.pk]),
+			{
+				'title': 'Write あ',
+				'activity_type': 'writing',
+				'is_published': True,
+				'items': [{'prompt': 'Practice the character', 'answer': 'あ'}],
+			},
+			format='json',
+		)
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+		activity_id = response.data['id']
+
+		self.client.force_authenticate(self.learner)
+		detail = self.client.get(reverse('learning_activity_detail', args=[activity_id]))
+		self.assertEqual(detail.data['items'][0]['target'], 'あ')
+		attempt = self.client.post(
+			reverse('learning_activity_attempt', args=[activity_id]),
+			{'responses': [{
+				'item_id': detail.data['items'][0]['id'],
+				'strokes': [[[0.1, 0.1], [0.5, 0.5], [0.9, 0.8]]],
+			}]},
+			format='json',
+		)
+		self.assertEqual(attempt.status_code, status.HTTP_201_CREATED, attempt.data)
+		self.assertIsNone(attempt.data['score'])
+		self.assertEqual(attempt.data['completed_items'], 1)
+		self.assertEqual(
+			LearningActivityAttempt.objects.get(pk=attempt.data['id']).responses[0]['strokes'][0],
+			[[0.1, 0.1], [0.5, 0.5], [0.9, 0.8]],
+		)

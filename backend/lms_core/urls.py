@@ -22,6 +22,13 @@ from .views import (
     SubmitAssignmentView, CourseAssignmentListCreateView, AssignmentSubmissionListView,
     AssignmentGradingView, AssignmentDetailView, AssignmentQuestionAttachmentView,
 )
+from .advanced_views import (
+    CourseAnalyticsView,
+    CourseInterventionView,
+    CourseLearningActivityListCreateView,
+    LearningActivityAttemptView,
+    LearningActivityDetailView,
+)
 
 urlpatterns = [
     path('register/', RegisterView.as_view(), name='register'),
@@ -84,4 +91,9 @@ urlpatterns = [
     path('assignments/<int:assignment_id>/submit/', SubmitAssignmentView.as_view(), name='submit_assignment'),
     path('assignments/<int:assignment_id>/submissions/', AssignmentSubmissionListView.as_view(), name='assignment_submissions'),
     path('assignments/<int:assignment_id>/grading/', AssignmentGradingView.as_view(), name='assignment_grading'),
+    path('courses/<int:course_id>/analytics/', CourseAnalyticsView.as_view(), name='course_analytics'),
+    path('courses/<int:course_id>/analytics/intervene/', CourseInterventionView.as_view(), name='course_intervention'),
+    path('courses/<int:course_id>/activities/', CourseLearningActivityListCreateView.as_view(), name='course_learning_activities'),
+    path('activities/<int:activity_id>/', LearningActivityDetailView.as_view(), name='learning_activity_detail'),
+    path('activities/<int:activity_id>/attempts/', LearningActivityAttemptView.as_view(), name='learning_activity_attempt'),
 ]

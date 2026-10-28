@@ -2,10 +2,11 @@ from rest_framework import serializers
 from django.db import transaction
 from django.db.models import Q
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from .models import (
     AdminLog, Comment, Course, Enrollment, Lesson, LessonProgress, Module,
     LessonPage, Notification, Question, Quiz, QuizSubmission, Report, Test, TestSubmission,
-    Assignment, Submission
+    Assignment, Submission, LearningActivity, LearningActivityAttempt, LearningActivityItem,
 )
 
 User = get_user_model()
@@ -80,32 +81,70 @@ class AssignmentOutlineSerializer(serializers.ModelSerializer):
         fields = ('id', 'title', 'assignment_type', 'deadline', 'time_limit_minutes', 'is_published', 'publish_at')
 
 
+class LearningActivityOutlineSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LearningActivity
+        fields = ('id', 'title', 'activity_type', 'is_published')
+
+
+def _can_manage_module_contents(request, module):
+    user = getattr(request, 'user', None)
+    role = getattr(user, 'role', None)
+    return role == 'admin' or (
+        role == 'instructor' and module.course.instructor_id == user.id
+    )
+
+
 class ModuleOutlineSerializer(serializers.ModelSerializer):
     lessons = LessonOutlineSerializer(many=True, read_only=True)
     assignments = serializers.SerializerMethodField()
+    activities = serializers.SerializerMethodField()
 
     class Meta:
         model = Module
-        fields = ('id', 'course', 'title', 'order', 'lessons', 'assignments')
+        fields = ('id', 'course', 'title', 'order', 'lessons', 'assignments', 'activities')
 
     def get_assignments(self, module):
         request = self.context.get('request')
-        if request and getattr(request.user, 'role', None) in ('instructor', 'admin'):
+        if _can_manage_module_contents(request, module):
             assignments = module.assignments.all()
         else:
-            from django.utils import timezone
             assignments = module.assignments.filter(
                 is_published=True,
             ).filter(Q(publish_at__isnull=True) | Q(publish_at__lte=timezone.now()))
         return AssignmentOutlineSerializer(assignments, many=True, context=self.context).data
 
+    def get_activities(self, module):
+        request = self.context.get('request')
+        activities = module.learning_activities.all()
+        if not _can_manage_module_contents(request, module):
+            activities = activities.filter(is_published=True)
+        return LearningActivityOutlineSerializer(activities, many=True, context=self.context).data
+
 class ModuleSerializer(serializers.ModelSerializer):
     lessons = LessonSerializer(many=True, read_only=True)
-    assignments = AssignmentOutlineSerializer(many=True, read_only=True)
+    assignments = serializers.SerializerMethodField()
+    activities = serializers.SerializerMethodField()
 
     class Meta:
         model = Module
-        fields = ('id', 'course', 'title', 'order', 'lessons', 'assignments')
+        fields = ('id', 'course', 'title', 'order', 'lessons', 'assignments', 'activities')
+
+    def get_assignments(self, module):
+        request = self.context.get('request')
+        assignments = module.assignments.all()
+        if not _can_manage_module_contents(request, module):
+            assignments = assignments.filter(
+                is_published=True,
+            ).filter(Q(publish_at__isnull=True) | Q(publish_at__lte=timezone.now()))
+        return AssignmentOutlineSerializer(assignments, many=True, context=self.context).data
+
+    def get_activities(self, module):
+        request = self.context.get('request')
+        activities = module.learning_activities.all()
+        if not _can_manage_module_contents(request, module):
+            activities = activities.filter(is_published=True)
+        return LearningActivityOutlineSerializer(activities, many=True, context=self.context).data
 
 class QuestionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -362,3 +401,103 @@ class SubmissionSerializer(serializers.ModelSerializer):
         if value and value.size > 20 * 1024 * 1024:
             raise serializers.ValidationError('Tệp bài nộp không được vượt quá 20 MB.')
         return value
+
+
+class LearningActivityItemSerializer(serializers.ModelSerializer):
+    answer = serializers.CharField(write_only=True)
+    target = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LearningActivityItem
+        fields = ('id', 'prompt', 'answer', 'target', 'options', 'order')
+        read_only_fields = ('id', 'order')
+
+    def get_fields(self):
+        fields = super().get_fields()
+        if self.context.get('include_answers'):
+            fields['answer'].write_only = False
+        return fields
+
+    def get_target(self, item):
+        if self.context.get('include_answers') or item.activity.activity_type == LearningActivity.WRITING:
+            return item.answer
+        return None
+
+
+class LearningActivitySerializer(serializers.ModelSerializer):
+    items = LearningActivityItemSerializer(many=True)
+
+    class Meta:
+        model = LearningActivity
+        fields = (
+            'id', 'course', 'module', 'title', 'description',
+            'activity_type', 'is_published', 'items', 'created_at',
+        )
+        read_only_fields = ('id', 'course', 'created_at')
+
+    def validate(self, attrs):
+        activity_type = attrs.get(
+            'activity_type',
+            getattr(self.instance, 'activity_type', None),
+        )
+        items = attrs.get('items')
+        if items is None:
+            if self.instance is None:
+                raise serializers.ValidationError({'items': ['Thêm ít nhất một nội dung.']})
+            items = list(self.instance.items.values('prompt', 'answer', 'options'))
+        if not items:
+            raise serializers.ValidationError({'items': ['Thêm ít nhất một nội dung.']})
+        if len(items) > 50:
+            raise serializers.ValidationError({'items': ['Mỗi hoạt động tối đa 50 nội dung.']})
+
+        for index, item in enumerate(items, start=1):
+            if not str(item.get('prompt', '')).strip():
+                raise serializers.ValidationError({'items': [f'Nội dung {index}: câu hỏi/hướng dẫn không được để trống.']})
+            answer = str(item.get('answer', '')).strip()
+            if not answer:
+                raise serializers.ValidationError({'items': [f'Nội dung {index}: đáp án/ký tự mẫu không được để trống.']})
+            options = item.get('options') or []
+            if activity_type == LearningActivity.QUIZ:
+                if not isinstance(options, list) or len(options) < 2:
+                    raise serializers.ValidationError({'items': [f'Câu {index} cần ít nhất hai lựa chọn.']})
+                if answer not in options:
+                    raise serializers.ValidationError({'items': [f'Đáp án câu {index} phải nằm trong các lựa chọn.']})
+            elif activity_type != LearningActivity.WRITING and options:
+                raise serializers.ValidationError({'items': [f'Nội dung {index} không dùng danh sách lựa chọn.']})
+        return attrs
+
+    def create(self, validated_data):
+        items = validated_data.pop('items')
+        activity = LearningActivity.objects.create(**validated_data)
+        for index, item in enumerate(items, start=1):
+            item.pop('order', None)
+            item['order'] = index
+        LearningActivityItem.objects.bulk_create([
+            LearningActivityItem(activity=activity, **item)
+            for item in items
+        ])
+        return activity
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        items = validated_data.pop('items', None)
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+        instance.save()
+        if items is not None:
+            instance.items.all().delete()
+            for index, item in enumerate(items, start=1):
+                item.pop('order', None)
+                item['order'] = index
+            LearningActivityItem.objects.bulk_create([
+                LearningActivityItem(activity=instance, **item)
+                for item in items
+            ])
+        return instance
+
+
+class LearningActivityAttemptSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LearningActivityAttempt
+        fields = ('id', 'activity', 'responses', 'score', 'completed_items', 'total_items', 'submitted_at')
+        read_only_fields = fields

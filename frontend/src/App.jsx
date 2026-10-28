@@ -12,6 +12,7 @@ import CourseListPage from './pages/CourseListPage';
 import CourseDetailPage from './pages/CourseDetailPage';
 import LessonPage from './pages/LessonPage';
 import AssignmentPage from './pages/AssignmentPage';
+import LearningActivityPage from './pages/LearningActivityPage';
 import InstructorAssignmentResultsPage from './pages/InstructorAssignmentResultsPage';
 import CreateCoursePage from './pages/CreateCoursePage';
 import InstructorCoursesPage from './pages/InstructorCoursesPage';
@@ -71,6 +72,7 @@ function App() {
               <Route path="/courses/:id" element={<CourseDetailPage />} />
               <Route path="/courses/:id/lessons/:lessonId" element={<LessonPage />} />
               <Route path="/courses/:id/assignments/:assignmentId" element={<AssignmentPage />} />
+              <Route path="/courses/:id/activities/:activityId" element={<LearningActivityPage />} />
 
               {/* Instructor Protected Routes */}
               <Route

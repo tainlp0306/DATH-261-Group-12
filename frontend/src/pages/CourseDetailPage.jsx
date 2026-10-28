@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
-import { ArrowLeft, Award, BookOpen, CheckCircle2, Clock3, FileText, Layers, PlayCircle, Presentation, User } from 'lucide-react';
+import { ArrowLeft, Award, BookOpen, BookOpenCheck, CheckCircle2, Clock3, FileText, Layers, PlayCircle, Presentation, User } from 'lucide-react';
 import { courseApi } from '../api/courseApi';
 import { useAuth } from '../context/AuthContext';
 import LoadingSpinner from '../components/LoadingSpinner';
@@ -15,9 +15,10 @@ const lessonIcon = (type) => {
 const CourseDetailPage = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { isAuthenticated, isLearner, isInstructor } = useAuth();
+  const { isAuthenticated, isLearner, isInstructor, isAdmin, user } = useAuth();
   const [course, setCourse] = useState(null);
   const [unassignedAssignments, setUnassignedAssignments] = useState([]);
+  const [unassignedActivities, setUnassignedActivities] = useState([]);
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -36,13 +37,27 @@ const CourseDetailPage = () => {
         setCourse(courseData);
         const enrolled = enrollments.some((enrollment) => enrollment.course === Number(id));
         setIsEnrolled(enrolled);
-        if (isInstructor || enrolled) {
-          try {
-            const assignmentResponse = await courseApi.getCourseAssignments(id);
+        const canManageCourse = isAdmin || (
+          isInstructor && Number(courseData.instructor) === Number(user?.id)
+        );
+        if (canManageCourse || enrolled) {
+          const [assignmentResult, activityResult] = await Promise.allSettled([
+            courseApi.getCourseAssignments(id),
+            courseApi.getCourseLearningActivities(id),
+          ]);
+          if (!active) return;
+          if (assignmentResult.status === 'fulfilled') {
+            const assignmentResponse = assignmentResult.value;
             const assignmentList = Array.isArray(assignmentResponse) ? assignmentResponse : assignmentResponse?.results || [];
-            if (active) setUnassignedAssignments(assignmentList.filter((assignment) => !assignment.module));
-          } catch (assignmentError) {
-            console.warn('Could not load unassigned course assignments:', assignmentError);
+            setUnassignedAssignments(assignmentList.filter((assignment) => !assignment.module));
+          } else {
+            console.warn('Could not load unassigned course assignments:', assignmentResult.reason);
+          }
+          if (activityResult.status === 'fulfilled') {
+            const activityList = Array.isArray(activityResult.value) ? activityResult.value : activityResult.value?.results || [];
+            setUnassignedActivities(activityList.filter((activity) => !activity.module));
+          } else {
+            console.warn('Could not load course activities:', activityResult.reason);
           }
         }
       } catch (loadError) {
@@ -55,7 +70,7 @@ const CourseDetailPage = () => {
     };
     load();
     return () => { active = false; };
-  }, [id, isAuthenticated, isInstructor]);
+  }, [id, isAuthenticated, isInstructor, isAdmin, user?.id]);
 
   const enroll = async () => {
     if (!isAuthenticated) {
@@ -84,6 +99,11 @@ const CourseDetailPage = () => {
 
   const modules = [...(course.modules || [])].sort((left, right) => left.order - right.order);
   const totalLessons = modules.reduce((total, module) => total + (module.lessons?.length || 0), 0);
+  const canManageCourse = isAdmin || (
+    isInstructor && Number(course.instructor) === Number(user?.id)
+  );
+  const canOpenContent = canManageCourse || isEnrolled;
+  const contentAccessLabel = isLearner ? 'Đăng ký để mở' : 'Không có quyền mở';
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
@@ -113,12 +133,12 @@ const CourseDetailPage = () => {
         {modules.length === 0 ? <p className="py-8 text-sm text-slate-500">Khóa học chưa có chương học.</p> : modules.map((module, index) => {
           const lessons = [...(module.lessons || [])].sort((left, right) => left.order - right.order);
           const assignments = module.assignments || [];
-          const canOpenContent = isInstructor || isEnrolled;
+          const activities = module.activities || [];
           return (
             <section key={module.id} className="border-b border-slate-200 last:border-b-0">
               <header className="flex flex-wrap items-baseline justify-between gap-2 bg-slate-50 px-4 py-4">
                 <h2 className="font-semibold text-slate-900">Chương {index + 1}: {module.title}</h2>
-                <span className="text-xs text-slate-500">{lessons.length} bài học · {assignments.length} bài tập</span>
+                <span className="text-xs text-slate-500">{lessons.length} bài học · {assignments.length} bài tập · {activities.length} bài luyện</span>
               </header>
               <ul className="divide-y divide-slate-100">
                 {lessons.map((lesson, lessonIndex) => (
@@ -129,7 +149,7 @@ const CourseDetailPage = () => {
                       </Link>
                     ) : (
                       <div className="flex min-h-14 items-center gap-3 px-4 py-3 text-sm text-slate-700">
-                        {lessonIcon(lesson.lesson_type)}<span className="flex-1">{lessonIndex + 1}. {lesson.title}</span><span className="text-xs text-amber-800">Đăng ký để mở</span>
+                        {lessonIcon(lesson.lesson_type)}<span className="flex-1">{lessonIndex + 1}. {lesson.title}</span><span className="text-xs text-amber-800">{contentAccessLabel}</span>
                       </div>
                     )}
                   </li>
@@ -143,12 +163,27 @@ const CourseDetailPage = () => {
                       </Link>
                     ) : (
                       <div className="flex min-h-14 items-center gap-3 border-l-2 border-amber-400 bg-amber-50/30 px-4 py-3 text-sm text-slate-700">
-                        <Award className="h-4 w-4 text-amber-700" /><span className="flex-1">{assignment.title}</span><span className="text-xs text-amber-800">Đăng ký để mở</span>
+                        <Award className="h-4 w-4 text-amber-700" /><span className="flex-1">{assignment.title}</span><span className="text-xs text-amber-800">{contentAccessLabel}</span>
                       </div>
                     )}
                   </li>
                 ))}
-                {!lessons.length && !assignments.length && <li className="px-4 py-4 text-sm text-slate-500">Chương này chưa có bài học hoặc bài tập.</li>}
+                {activities.map((activity) => (
+                  <li key={`activity-${activity.id}`}>
+                    {canOpenContent ? (
+                      <Link to={`/courses/${course.id}/activities/${activity.id}`} className="flex min-h-14 items-center gap-3 border-l-2 border-indigo-400 bg-indigo-50/30 px-4 py-3 text-sm text-slate-800 hover:bg-indigo-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-indigo-700">
+                        <BookOpenCheck className="h-4 w-4 text-indigo-700" />
+                        <span className="flex-1">{activity.title}</span>
+                        <span className="text-xs text-slate-500">Bài luyện ngắn</span>
+                      </Link>
+                    ) : (
+                      <div className="flex min-h-14 items-center gap-3 border-l-2 border-indigo-400 bg-indigo-50/30 px-4 py-3 text-sm text-slate-700">
+                        <BookOpenCheck className="h-4 w-4 text-indigo-700" /><span className="flex-1">{activity.title}</span><span className="text-xs text-amber-800">{contentAccessLabel}</span>
+                      </div>
+                    )}
+                  </li>
+                ))}
+                {!lessons.length && !assignments.length && !activities.length && <li className="px-4 py-4 text-sm text-slate-500">Chương này chưa có bài học, bài tập hoặc bài luyện ngắn.</li>}
               </ul>
             </section>
           );
@@ -162,6 +197,20 @@ const CourseDetailPage = () => {
               <li key={assignment.id}>
                 <Link to={`/courses/${course.id}/assignments/${assignment.id}`} className="flex min-h-14 items-center gap-3 px-4 py-3 text-sm text-slate-800 hover:bg-amber-50">
                   <Award className="h-4 w-4 text-amber-700" /><span className="flex-1">{assignment.title}</span><span className="text-xs text-slate-500">{assignment.assignment_type === 'quiz' ? 'Trắc nghiệm' : 'Nộp tệp'}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+      {unassignedActivities.length > 0 && (
+        <section className="mt-8 border-y border-slate-300" aria-label="Bài luyện ngắn chưa gắn chương">
+          <h2 className="bg-indigo-50 px-4 py-4 font-semibold text-slate-900">Bài luyện ngắn</h2>
+          <ul className="divide-y divide-slate-100">
+            {unassignedActivities.map((activity) => (
+              <li key={activity.id}>
+                <Link to={`/courses/${course.id}/activities/${activity.id}`} className="flex min-h-14 items-center gap-3 px-4 py-3 text-sm text-slate-800 hover:bg-indigo-50">
+                  <BookOpenCheck className="h-4 w-4 text-indigo-700" /><span className="flex-1">{activity.title}</span><span className="text-xs text-slate-500">Bài luyện ngắn</span>
                 </Link>
               </li>
             ))}

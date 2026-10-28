@@ -92,6 +92,44 @@ export const courseApi = {
     return response.data;
   },
 
+  getCourseAnalytics: async (courseId) => {
+    const response = await api.get(`courses/${courseId}/analytics/`);
+    return response.data;
+  },
+
+  interveneCourseLearner: async (courseId, studentId) => {
+    const response = await api.post(`courses/${courseId}/analytics/intervene/`, {
+      student_id: studentId,
+      action: 'notify',
+    });
+    return response.data;
+  },
+
+  getCourseLearningActivities: async (courseId) => {
+    const response = await api.get(`courses/${courseId}/activities/`);
+    return response.data;
+  },
+
+  createCourseLearningActivity: async (courseId, activity) => {
+    const response = await api.post(`courses/${courseId}/activities/`, activity);
+    return response.data;
+  },
+
+  getLearningActivity: async (activityId) => {
+    const response = await api.get(`activities/${activityId}/`);
+    return response.data;
+  },
+
+  updateLearningActivity: async (activityId, activity) => {
+    const response = await api.patch(`activities/${activityId}/`, activity);
+    return response.data;
+  },
+
+  submitLearningActivity: async (activityId, responses) => {
+    const response = await api.post(`activities/${activityId}/attempts/`, { responses });
+    return response.data;
+  },
+
   getAssignmentSubmissions: async (assignmentId) => {
     const response = await api.get(`assignments/${assignmentId}/submissions/`);
     return response.data;

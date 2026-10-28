@@ -212,4 +212,111 @@ class Submission(models.Model):
     class Meta:
         unique_together = ('assignment', 'student')
 
+
+class LearningEvent(models.Model):
+    LESSON_COMPLETED = 'lesson_completed'
+    QUIZ_SUBMITTED = 'quiz_submitted'
+    FILE_SUBMITTED = 'file_submitted'
+    ACTIVITY_SUBMITTED = 'activity_submitted'
+    ENROLLED = 'enrolled'
+    EVENT_TYPES = [
+        (LESSON_COMPLETED, 'Hoàn thành bài học'),
+        (QUIZ_SUBMITTED, 'Nộp bài trắc nghiệm'),
+        (FILE_SUBMITTED, 'Nộp bài tệp'),
+        (ACTIVITY_SUBMITTED, 'Hoàn thành bài luyện tập ngắn'),
+        (ENROLLED, 'Ghi danh khóa học'),
+    ]
+
+    actor = models.ForeignKey(
+        User,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name='learning_events',
+    )
+    course = models.ForeignKey(
+        Course,
+        on_delete=models.CASCADE,
+        related_name='learning_events',
+    )
+    lesson = models.ForeignKey(Lesson, null=True, blank=True, on_delete=models.SET_NULL)
+    assignment = models.ForeignKey(Assignment, null=True, blank=True, on_delete=models.SET_NULL)
+    event_type = models.CharField(max_length=32, choices=EVENT_TYPES)
+    payload = models.JSONField(default=dict, blank=True)
+    occurred_at = models.DateTimeField(db_index=True)
+    source = models.CharField(max_length=16, default='web')
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['course', 'occurred_at'], name='learn_evt_course_time_idx'),
+            models.Index(fields=['actor', 'course', 'occurred_at'], name='learn_evt_actor_time_idx'),
+        ]
+
+
+class Intervention(models.Model):
+    NOTIFY = 'notify'
+    ACTIONS = [(NOTIFY, 'Nhắc học viên')]
+
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='interventions')
+    student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='interventions_received')
+    actor = models.ForeignKey(
+        User,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name='interventions_sent',
+    )
+    action = models.CharField(max_length=32, choices=ACTIONS)
+    notification = models.ForeignKey(Notification, null=True, blank=True, on_delete=models.SET_NULL)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class LearningActivity(models.Model):
+    QUIZ = 'quiz'
+    VOCABULARY = 'vocabulary'
+    WRITING = 'writing'
+    ACTIVITY_TYPES = [
+        (QUIZ, 'Trắc nghiệm ngắn'),
+        (VOCABULARY, 'Luyện từ vựng'),
+        (WRITING, 'Luyện viết ký tự'),
+    ]
+
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='learning_activities')
+    module = models.ForeignKey(
+        Module,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='learning_activities',
+    )
+    created_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='created_activities')
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    activity_type = models.CharField(max_length=16, choices=ACTIVITY_TYPES)
+    is_published = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
+class LearningActivityItem(models.Model):
+    activity = models.ForeignKey(LearningActivity, on_delete=models.CASCADE, related_name='items')
+    prompt = models.TextField()
+    answer = models.CharField(max_length=255)
+    options = models.JSONField(default=list, blank=True)
+    order = models.PositiveIntegerField(default=1)
+
+    class Meta:
+        ordering = ['order', 'id']
+
+
+class LearningActivityAttempt(models.Model):
+    activity = models.ForeignKey(
+        LearningActivity,
+        on_delete=models.CASCADE,
+        related_name='attempts',
+    )
+    student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='activity_attempts')
+    responses = models.JSONField(default=list)
+    score = models.FloatField(null=True, blank=True)
+    completed_items = models.PositiveIntegerField(default=0)
+    total_items = models.PositiveIntegerField(default=0)
+    submitted_at = models.DateTimeField(auto_now_add=True)
         

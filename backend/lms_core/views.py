@@ -39,6 +39,7 @@ from .models import (
     Notification, Quiz, Question, QuizSubmission, Report, Test, TestSubmission, User,
     Assignment, Submission,
 )
+from .analytics import log_learning_event
 
 User = get_user_model()
 
@@ -591,6 +592,12 @@ class EnrollmentListCreateView(generics.ListCreateAPIView):
             return Response({"message": "Bạn đã đăng ký khóa học này rồi"}, status=status.HTTP_400_BAD_REQUEST)
 
         enrollment = Enrollment.objects.create(student=request.user, course=course)
+        log_learning_event(
+            actor=request.user,
+            course=course,
+            event_type='enrolled',
+            payload={'enrollment_id': enrollment.id},
+        )
         serializer = self.get_serializer(enrollment)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -661,11 +668,20 @@ class LessonProgressUpdateView(APIView):
             student=request.user,
             lesson=lesson
         )
+        was_completed = progress.is_completed
         progress.is_completed = request.data.get('is_completed', progress.is_completed)
         progress.last_position = request.data.get('last_position', progress.last_position)
         if last_page is not None:
             progress.last_page = last_page
         progress.save()
+        if progress.is_completed and not was_completed:
+            log_learning_event(
+                actor=request.user,
+                course=lesson.module.course,
+                lesson=lesson,
+                event_type='lesson_completed',
+                payload={'lesson_id': lesson.id},
+            )
         
         return Response({
             "message": "Cập nhật tiến độ thành công",
@@ -1461,6 +1477,18 @@ class SubmitAssignmentView(APIView):
                     'answers': normalized_answers,
                 },
             )
+            log_learning_event(
+                actor=request.user,
+                course=assignment.course,
+                assignment=assignment,
+                event_type='quiz_submitted',
+                payload={
+                    'assignment_id': assignment.id,
+                    'score': score,
+                    'correct_count': correct_count,
+                    'total_questions': len(questions),
+                },
+            )
             return Response({
                 'id': submission.id,
                 'message': 'Nộp bài thành công.',
@@ -1476,5 +1504,12 @@ class SubmitAssignmentView(APIView):
             assignment=assignment,
             student=request.user,
             defaults={'submitted_file': uploaded_file, 'score': None, 'feedback': ''},
+        )
+        log_learning_event(
+            actor=request.user,
+            course=assignment.course,
+            assignment=assignment,
+            event_type='file_submitted',
+            payload={'assignment_id': assignment.id},
         )
         return Response(SubmissionSerializer(submission, context={'request': request}).data, status=status.HTTP_200_OK)
