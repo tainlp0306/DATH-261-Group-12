@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import override_settings
+from django.test import SimpleTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from datetime import timedelta
@@ -18,6 +18,17 @@ from .models import (
 )
 
 User = get_user_model()
+
+
+class DemoSlideMediaTests(SimpleTestCase):
+	def test_demo_slide_is_available_when_debug_is_disabled(self):
+		with override_settings(DEBUG=False):
+			response = self.client.get('/media/lessons/files/slide_test.pdf')
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response['Content-Type'], 'application/pdf')
+		self.assertTrue(response.streaming)
+		self.assertTrue(b''.join(response.streaming_content).startswith(b'%PDF-'))
 
 
 class AdminCourseManagementTests(APITestCase):

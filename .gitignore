@@ -1,7 +1,12 @@
 .env
 .env.*
 !.env.example
-backend/media/
+backend/media/*
+!backend/media/lessons/
+backend/media/lessons/*
+!backend/media/lessons/files/
+backend/media/lessons/files/*
+!backend/media/lessons/files/slide_test.pdf
 backend/staticfiles/
 backend/__pycache__/
 backend/**/__pycache__/
