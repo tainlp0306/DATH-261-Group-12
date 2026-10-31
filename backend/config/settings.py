@@ -173,10 +173,47 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+SUPABASE_STORAGE_ENABLED = _env_bool('SUPABASE_STORAGE_ENABLED', False)
+default_storage = {
+    'BACKEND': 'django.core.files.storage.FileSystemStorage',
+}
+if SUPABASE_STORAGE_ENABLED:
+    storage_options = {
+        'bucket_name': os.environ.get('SUPABASE_STORAGE_BUCKET', ''),
+        'endpoint_url': os.environ.get('SUPABASE_STORAGE_ENDPOINT_URL', ''),
+        'region_name': os.environ.get('SUPABASE_STORAGE_REGION', ''),
+        'access_key': os.environ.get('SUPABASE_STORAGE_ACCESS_KEY_ID', ''),
+        'secret_key': os.environ.get('SUPABASE_STORAGE_SECRET_ACCESS_KEY', ''),
+        'addressing_style': 'path',
+        'signature_version': 's3v4',
+        'querystring_auth': True,
+        'querystring_expire': 300,
+        'file_overwrite': False,
+    }
+    missing_storage_settings = [
+        key for key in (
+            'bucket_name',
+            'endpoint_url',
+            'region_name',
+            'access_key',
+            'secret_key',
+        )
+        if not storage_options[key]
+    ]
+    if missing_storage_settings:
+        raise ValueError(
+            'Supabase Storage is enabled but required settings are missing: '
+            + ', '.join(missing_storage_settings)
+        )
+    if not storage_options['endpoint_url'].startswith('https://'):
+        raise ValueError('SUPABASE_STORAGE_ENDPOINT_URL must use HTTPS.')
+    default_storage = {
+        'BACKEND': 'storages.backends.s3.S3Storage',
+        'OPTIONS': storage_options,
+    }
+
 STORAGES = {
-    'default': {
-        'BACKEND': 'django.core.files.storage.FileSystemStorage',
-    },
+    'default': default_storage,
     'staticfiles': {
         'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
     },

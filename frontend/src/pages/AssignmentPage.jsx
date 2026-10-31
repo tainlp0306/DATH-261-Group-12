@@ -163,7 +163,7 @@ const AssignmentPage = () => {
         <h1 className="mt-2 font-display text-2xl font-semibold text-slate-950">{assignment.title}</h1>
         {assignment.description && <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-600">{assignment.description}</p>}
         <div className="mt-3 flex flex-wrap gap-4 text-xs text-slate-500">
-          {assignment.deadline && <span className="inline-flex items-center gap-1.5"><Clock3 className="h-4 w-4" /> Hạn nộp: {new Date(assignment.deadline).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</span>}
+          {assignment.deadline && <span className={`inline-flex items-center gap-1.5 ${expired ? 'font-semibold text-rose-700' : ''}`}><Clock3 className="h-4 w-4" /> {expired ? 'Đã quá hạn:' : 'Hạn nộp:'} {new Date(assignment.deadline).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</span>}
           {assignment.assignment_type === 'quiz' && <span>Thời gian: {Math.floor((quizSeconds || 0) / 60)}:{String((quizSeconds || 0) % 60).padStart(2, '0')}</span>}
         </div>
       </header>
@@ -218,10 +218,10 @@ const AssignmentPage = () => {
                   <span className="inline-flex items-center gap-1 text-xs text-emerald-800"><CheckCircle2 className="h-4 w-4" /> Đã nộp</span>
                 </div>
               )}
-              <label className="mt-5 flex min-h-36 cursor-pointer flex-col items-center justify-center border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-center hover:border-emerald-700 hover:bg-emerald-50/40">
+              <label aria-disabled={expired || submitting} className={`mt-5 flex min-h-36 flex-col items-center justify-center border-2 border-dashed px-4 py-6 text-center ${expired || submitting ? 'cursor-not-allowed border-slate-200 bg-slate-100 text-slate-400' : 'cursor-pointer border-slate-300 bg-slate-50 hover:border-emerald-700 hover:bg-emerald-50/40'}`}>
                 <Upload className="h-7 w-7 text-emerald-800" />
-                <span className="mt-2 text-sm font-semibold text-slate-800">{file?.name || 'Chọn tệp từ thiết bị'}</span>
-                <span className="mt-1 text-xs text-slate-500">{file ? `${(file.size / (1024 * 1024)).toFixed(2)} MB` : 'PDF, tài liệu, hình ảnh hoặc tệp nén · Tối đa 20 MB'}</span>
+                <span className="mt-2 text-sm font-semibold text-slate-800">{expired ? 'Bài tập đã quá hạn' : file?.name || 'Chọn tệp từ thiết bị'}</span>
+                <span className="mt-1 text-xs text-slate-500">{expired ? 'Không thể chọn hoặc nộp tệp.' : file ? `${(file.size / (1024 * 1024)).toFixed(2)} MB` : 'PDF, tài liệu, hình ảnh hoặc tệp nén · Tối đa 20 MB'}</span>
                 <input type="file" className="sr-only" onChange={selectFile} disabled={expired || submitting} />
               </label>
               {file && <button type="button" onClick={() => setFile(null)} className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-rose-700"><X className="h-4 w-4" /> Bỏ tệp đã chọn</button>}
