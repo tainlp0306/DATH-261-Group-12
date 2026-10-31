@@ -1,14 +1,19 @@
 from django.contrib.auth import get_user_model
 from django.core import mail
+from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 from datetime import timedelta
+from io import StringIO
 import json
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from rest_framework import status
 from rest_framework.test import APITestCase
+from storages.backends.s3 import S3Storage
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 from .models import (
@@ -29,6 +34,58 @@ class DemoSlideMediaTests(SimpleTestCase):
 		self.assertEqual(response['Content-Type'], 'application/pdf')
 		self.assertTrue(response.streaming)
 		self.assertTrue(b''.join(response.streaming_content).startswith(b'%PDF-'))
+
+
+class SupabaseStorageTests(SimpleTestCase):
+	def test_private_storage_generates_short_lived_signed_urls(self):
+		storage = S3Storage(
+			bucket_name='lingosphere',
+			endpoint_url='https://project.supabase.co/storage/v1/s3',
+			region_name='ap-southeast-1',
+			access_key='test-access-key',
+			secret_key='test-secret-key',
+			addressing_style='path',
+			signature_version='s3v4',
+			querystring_auth=True,
+			querystring_expire=300,
+		)
+
+		parsed_url = urlparse(storage.url('lessons/files/slide.pdf'))
+		query = parse_qs(parsed_url.query)
+
+		self.assertEqual(parsed_url.scheme, 'https')
+		self.assertEqual(parsed_url.netloc, 'project.supabase.co')
+		self.assertIn('/storage/v1/s3/lingosphere/lessons/files/slide.pdf', parsed_url.path)
+		self.assertEqual(query['X-Amz-Expires'], ['300'])
+		self.assertIn('X-Amz-Signature', query)
+
+	def test_media_sync_requires_supabase_storage(self):
+		with override_settings(SUPABASE_STORAGE_ENABLED=False):
+			with self.assertRaises(CommandError):
+				call_command('sync_media_to_supabase', stdout=StringIO())
+
+	def test_media_sync_preserves_paths_and_does_not_replace_existing_files(self):
+		with TemporaryDirectory() as media_root:
+			file_path = Path(media_root) / 'lessons' / 'files' / 'slide.pdf'
+			file_path.parent.mkdir(parents=True)
+			file_path.write_bytes(b'%PDF-demo')
+
+			with (
+				override_settings(
+					SUPABASE_STORAGE_ENABLED=True,
+					MEDIA_ROOT=Path(media_root),
+				),
+				patch('lms_core.management.commands.sync_media_to_supabase.default_storage') as storage,
+			):
+				storage.exists.return_value = False
+				call_command('sync_media_to_supabase', stdout=StringIO())
+				self.assertEqual(storage.save.call_args.args[0], 'lessons/files/slide.pdf')
+				self.assertEqual(storage.save.call_args.args[1].name, 'lessons/files/slide.pdf')
+
+				storage.reset_mock()
+				storage.exists.return_value = True
+				call_command('sync_media_to_supabase', stdout=StringIO())
+				storage.save.assert_not_called()
 
 
 class AdminCourseManagementTests(APITestCase):
