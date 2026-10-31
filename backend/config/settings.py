@@ -36,6 +36,12 @@ def _env_list(name, default=''):
     ]
 
 
+def _normalize_email_password(host, password):
+    if host.strip().lower() in {'smtp.gmail.com', 'smtp.googlemail.com'}:
+        return ''.join(password.split())
+    return password
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
@@ -238,7 +244,12 @@ EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
 EMAIL_USE_TLS = os.environ.get('EMAIL_USE_TLS', 'true').lower() == 'true'
 EMAIL_USE_SSL = os.environ.get('EMAIL_USE_SSL', 'false').lower() == 'true'
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
-EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+EMAIL_HOST_PASSWORD = _normalize_email_password(
+    EMAIL_HOST,
+    os.environ.get('EMAIL_HOST_PASSWORD', ''),
+)
+MAILJET_API_KEY = os.environ.get('MAILJET_API_KEY', '').strip()
+MAILJET_SECRET_KEY = os.environ.get('MAILJET_SECRET_KEY', '').strip()
 
 AUTH_USER_MODEL = 'lms_core.User'
 

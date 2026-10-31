@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.core import mail
+from django.core.mail import EmailMultiAlternatives
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -13,11 +14,14 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from rest_framework import status
 from rest_framework.test import APITestCase
+from smtplib import SMTPAuthenticationError
 from storages.backends.s3 import S3Storage
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
+from config.settings import _normalize_email_password
+from .email_backends import EmailDeliveryError, MailjetEmailBackend
 from .models import (
-	AdminLog, Assignment, Comment, Course, Enrollment, Intervention, LearningActivity,
+	AdminLog, Assignment, Comment, Course, EmailOTP, Enrollment, Intervention, LearningActivity,
 	LearningActivityAttempt, LearningActivityItem, LearningEvent, Lesson, LessonProgress,
 	Module, Notification, Question, Report, Submission, Test, TestSubmission,
 )
@@ -86,6 +90,92 @@ class SupabaseStorageTests(SimpleTestCase):
 				storage.exists.return_value = True
 				call_command('sync_media_to_supabase', stdout=StringIO())
 				storage.save.assert_not_called()
+
+
+class TransactionalEmailBackendTests(SimpleTestCase):
+	@override_settings(MAILJET_API_KEY='test-api-key', MAILJET_SECRET_KEY='test-secret-key')
+	@patch('lms_core.email_backends.requests.post')
+	def test_mailjet_backend_sends_plain_text_email_over_https(self, post):
+		post.return_value.status_code = 200
+		post.return_value.json.return_value = {'Messages': [{'Status': 'success'}]}
+		message = EmailMultiAlternatives(
+			'OTP verification',
+			'Your code is 123456.',
+			'LingoSphere <verified@example.com>',
+			['Learner <learner@example.com>'],
+		)
+
+		sent = MailjetEmailBackend().send_messages([message])
+
+		self.assertEqual(sent, 1)
+		self.assertEqual(post.call_args.args[0], 'https://api.mailjet.com/v3.1/send')
+		self.assertEqual(post.call_args.kwargs['auth'], ('test-api-key', 'test-secret-key'))
+		payload = post.call_args.kwargs['json']['Messages'][0]
+		self.assertEqual(payload['From'], {
+			'Name': 'LingoSphere',
+			'Email': 'verified@example.com',
+		})
+		self.assertEqual(payload['To'], [{
+			'Name': 'Learner',
+			'Email': 'learner@example.com',
+		}])
+		self.assertEqual(payload['TextPart'], 'Your code is 123456.')
+		self.assertEqual(post.call_args.kwargs['timeout'], (5, 20))
+
+	@override_settings(MAILJET_API_KEY='test-api-key', MAILJET_SECRET_KEY='test-secret-key')
+	@patch('lms_core.email_backends.requests.post')
+	def test_mailjet_backend_reports_provider_status_without_exposing_credentials(self, post):
+		post.return_value.status_code = 401
+		message = EmailMultiAlternatives(
+			'OTP verification',
+			'Your code is 123456.',
+			'verified@example.com',
+			['learner@example.com'],
+		)
+
+		with self.assertRaises(EmailDeliveryError) as error:
+			MailjetEmailBackend().send_messages([message])
+
+		self.assertEqual(error.exception.provider_status, 401)
+		self.assertNotIn('test-api-key', str(error.exception))
+		self.assertNotIn('test-secret-key', str(error.exception))
+
+	@override_settings(MAILJET_API_KEY='test-api-key', MAILJET_SECRET_KEY='test-secret-key')
+	@patch('lms_core.email_backends.requests.post')
+	def test_mailjet_backend_rejects_unsuccessful_message_status(self, post):
+		post.return_value.status_code = 200
+		post.return_value.json.return_value = {'Messages': [{'Status': 'error'}]}
+		message = EmailMultiAlternatives(
+			'OTP verification',
+			'Your code is 123456.',
+			'verified@example.com',
+			['learner@example.com'],
+		)
+
+		with self.assertRaisesMessage(EmailDeliveryError, 'Mailjet did not accept the email.'):
+			MailjetEmailBackend().send_messages([message])
+
+	@override_settings(MAILJET_API_KEY='', MAILJET_SECRET_KEY='')
+	def test_mailjet_backend_fails_explicitly_when_credentials_are_missing(self):
+		message = EmailMultiAlternatives(
+			'OTP verification',
+			'Your code is 123456.',
+			'verified@example.com',
+			['learner@example.com'],
+		)
+
+		with self.assertRaisesMessage(EmailDeliveryError, 'Mailjet API credentials are not configured.'):
+			MailjetEmailBackend().send_messages([message])
+
+	def test_gmail_app_password_whitespace_is_normalized_only_for_gmail(self):
+		self.assertEqual(
+			_normalize_email_password('smtp.gmail.com', 'abcd efgh ijkl mnop'),
+			'abcdefghijklmnop',
+		)
+		self.assertEqual(
+			_normalize_email_password('smtp.example.com', 'password with spaces'),
+			'password with spaces',
+		)
 
 
 class AdminCourseManagementTests(APITestCase):
@@ -500,6 +590,49 @@ class NewFeatureApiTests(APITestCase):
 		)
 		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 		self.assertEqual(User.objects.get(username='otp-user').email, 'otp-user@example.com')
+
+	@override_settings(
+		EMAIL_BACKEND='lms_core.email_backends.MailjetEmailBackend',
+		MAILJET_API_KEY='test-api-key',
+		MAILJET_SECRET_KEY='test-secret-key',
+		DEFAULT_FROM_EMAIL='LingoSphere <verified@example.com>',
+	)
+	@patch('lms_core.email_backends.requests.post')
+	def test_registration_otp_uses_mailjet_transactional_api(self, post):
+		post.return_value.status_code = 200
+		post.return_value.json.return_value = {'Messages': [{'Status': 'success'}]}
+
+		response = self.client.post(
+			reverse('request_registration_otp'),
+			{'email': 'new-learner@example.com'},
+			format='json',
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(post.call_count, 1)
+		payload = post.call_args.kwargs['json']['Messages'][0]
+		self.assertEqual(payload['To'][0]['Email'], 'new-learner@example.com')
+		self.assertIn('Mã xác minh của bạn là ', payload['TextPart'])
+		self.assertEqual(EmailOTP.objects.filter(
+			email='new-learner@example.com',
+			purpose='registration',
+		).count(), 1)
+
+	@patch('lms_core.views.send_mail', side_effect=SMTPAuthenticationError(535, b'auth rejected'))
+	def test_otp_email_failure_is_reported_without_logging_recipient(self, send_mail_mock):
+		with self.assertLogs('lms_core.views', level='ERROR') as captured:
+			response = self.client.post(
+				reverse('request_registration_otp'),
+				{'email': 'private-recipient@example.com'},
+				format='json',
+			)
+
+		self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+		self.assertEqual(response.data['error'], 'Không gửi được email xác thực. Vui lòng thử lại sau.')
+		self.assertFalse(EmailOTP.objects.filter(email='private-recipient@example.com').exists())
+		self.assertNotIn('private-recipient@example.com', '\n'.join(captured.output))
+		self.assertNotIn('auth rejected', '\n'.join(captured.output))
+		send_mail_mock.assert_called_once()
 
 	@override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
 	def test_password_reset_otp_changes_password(self):

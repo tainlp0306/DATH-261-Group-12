@@ -18,7 +18,9 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from datetime import timedelta
 import json
+import logging
 import secrets
+from smtplib import SMTPException
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from django.utils.encoding import force_bytes, force_str
@@ -40,8 +42,10 @@ from .models import (
     Assignment, Submission,
 )
 from .analytics import log_learning_event
+from .email_backends import EmailDeliveryError
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 def notify_course_learners(course, *, title, message, target_url, available_at=None):
@@ -146,10 +150,19 @@ class OTPRequestView(APIView):
                 [email],
                 fail_silently=False,
             )
-        except Exception:
+        except (SMTPException, OSError, EmailDeliveryError) as error:
+            logger.error(
+                'OTP email delivery failed (backend=%s, error_type=%s, '
+                'smtp_code=%s, provider_status=%s, cause_type=%s).',
+                settings.EMAIL_BACKEND,
+                type(error).__name__,
+                getattr(error, 'smtp_code', None),
+                getattr(error, 'provider_status', None),
+                getattr(error, 'cause_type', None),
+            )
             otp.delete()
             return Response(
-                {'error': 'Không gửi được email. Kiểm tra cấu hình SMTP Gmail của máy chủ.'},
+                {'error': 'Không gửi được email xác thực. Vui lòng thử lại sau.'},
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
         return Response({'message': 'Mã xác minh đã được gửi nếu email hợp lệ.'})
