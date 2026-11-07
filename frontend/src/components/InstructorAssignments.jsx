@@ -5,7 +5,8 @@ import { Award, ClipboardList, Plus, Trash2 } from 'lucide-react';
 import { courseApi } from '../api/courseApi';
 
 const emptyQuestion = () => ({
-  content: '', option_a: '', option_b: '', option_c: '', option_d: '', correct_option: 'A',
+  content: '', option_a: '', option_b: '', option_c: '', option_d: '',
+  correct_option: 'A', explanation: '',
 });
 
 const vnLocalDateTime = (date) => {
@@ -35,6 +36,12 @@ const InstructorAssignments = ({ courseId, modules = [] }) => {
   const [moduleId, setModuleId] = useState('');
   const [assignmentType, setAssignmentType] = useState('quiz');
   const [timeLimit, setTimeLimit] = useState(15);
+  const [reviewMode, setReviewMode] = useState('after_submission');
+  const [reviewReleased, setReviewReleased] = useState(false);
+  const [reviewShowScore, setReviewShowScore] = useState(true);
+  const [reviewShowSubmittedAnswers, setReviewShowSubmittedAnswers] = useState(true);
+  const [reviewShowCorrectAnswers, setReviewShowCorrectAnswers] = useState(false);
+  const [reviewShowExplanations, setReviewShowExplanations] = useState(false);
   const [deadline, setDeadline] = useState('');
   const [publishAt, setPublishAt] = useState('');
   const [promptFile, setPromptFile] = useState(null);
@@ -73,6 +80,12 @@ const InstructorAssignments = ({ courseId, modules = [] }) => {
     setPromptFile(null);
     setNotifyStudents(true);
     setTimeLimit(15);
+    setReviewMode('after_submission');
+    setReviewReleased(false);
+    setReviewShowScore(true);
+    setReviewShowSubmittedAnswers(true);
+    setReviewShowCorrectAnswers(false);
+    setReviewShowExplanations(false);
     setAssignmentType('quiz');
     setQuestions([emptyQuestion()]);
   };
@@ -86,6 +99,12 @@ const InstructorAssignments = ({ courseId, modules = [] }) => {
       setModuleId(detail.module ? String(detail.module) : '');
       setAssignmentType(detail.assignment_type);
       setTimeLimit(detail.time_limit_minutes || 15);
+      setReviewMode(detail.review_mode || 'after_submission');
+      setReviewReleased(Boolean(detail.review_released));
+      setReviewShowScore(detail.review_show_score !== false);
+      setReviewShowSubmittedAnswers(detail.review_show_submitted_answers !== false);
+      setReviewShowCorrectAnswers(Boolean(detail.review_show_correct_answers));
+      setReviewShowExplanations(Boolean(detail.review_show_explanations));
       setDeadline(detail.deadline ? vnLocalDateTime(new Date(detail.deadline)) : '');
       setPublishAt(detail.publish_at ? vnLocalDateTime(new Date(detail.publish_at)) : '');
       setPromptFile(null);
@@ -108,6 +127,10 @@ const InstructorAssignments = ({ courseId, modules = [] }) => {
       toast.error('Vui lòng chọn thời điểm xuất bản theo giờ Việt Nam.');
       return;
     }
+    if (assignmentType === 'quiz' && reviewMode === 'after_deadline' && !deadline) {
+      toast.error('Chọn hạn nộp để mở xem lại sau khi bài kiểm tra kết thúc.');
+      return;
+    }
     if (action === 'schedule' && new Date(vnLocalToIso(publishAt)).getTime() <= Date.now()) {
       toast.error('Thời điểm xuất bản phải nằm trong tương lai theo giờ Việt Nam.');
       return;
@@ -122,6 +145,12 @@ const InstructorAssignments = ({ courseId, modules = [] }) => {
         deadline: vnLocalToIso(deadline),
         is_published: action !== 'draft',
         publish_at: action === 'schedule' ? vnLocalToIso(publishAt) : null,
+        review_mode: reviewMode,
+        review_released: reviewMode === 'manual' && reviewReleased,
+        review_show_score: reviewShowScore,
+        review_show_submitted_answers: reviewShowSubmittedAnswers,
+        review_show_correct_answers: reviewShowCorrectAnswers,
+        review_show_explanations: reviewShowExplanations,
         notify_students: notifyStudents,
         ...(promptFile ? { prompt_file: promptFile } : {}),
         questions: assignmentType === 'quiz' ? questions.map((question) => {
@@ -210,6 +239,40 @@ const InstructorAssignments = ({ courseId, modules = [] }) => {
             <input type="number" required min="1" max="600" value={timeLimit} onChange={(event) => setTimeLimit(event.target.value)} className="mt-1 block w-full border border-slate-300 bg-white px-3 py-2 text-sm" />
           </label>}
         </div>
+        {assignmentType === 'quiz' && (
+          <fieldset className="space-y-3 border border-slate-200 bg-slate-50 p-4">
+            <legend className="px-1 text-sm font-semibold text-slate-900">Kết quả và quyền xem lại</legend>
+            <label className="block text-xs font-semibold text-slate-700">
+              Khi nào học viên được xem lại?
+              <select value={reviewMode} onChange={(event) => setReviewMode(event.target.value)} className="mt-1 block w-full border border-slate-300 bg-white px-3 py-2 text-sm">
+                <option value="none">Không cho xem lại</option>
+                <option value="after_submission">Sau khi từng học viên nộp bài</option>
+                <option value="after_deadline">Sau hạn nộp bài</option>
+                <option value="manual">Khi giảng viên công bố</option>
+              </select>
+            </label>
+            <p className="text-xs text-slate-500">Điểm chỉ xuất hiện theo lựa chọn bên dưới; đáp án đúng và giải thích luôn bị ẩn cho đến khi quyền xem lại được mở.</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {[
+                ['Điểm số', reviewShowScore, setReviewShowScore],
+                ['Đáp án học viên đã chọn', reviewShowSubmittedAnswers, setReviewShowSubmittedAnswers],
+                ['Đáp án đúng', reviewShowCorrectAnswers, setReviewShowCorrectAnswers],
+                ['Giải thích đáp án', reviewShowExplanations, setReviewShowExplanations],
+              ].map(([label, checked, setter]) => (
+                <label key={label} className="flex items-center gap-2 text-xs font-medium text-slate-700">
+                  <input type="checkbox" checked={checked} onChange={(event) => setter(event.target.checked)} />
+                  {label}
+                </label>
+              ))}
+            </div>
+            {reviewMode === 'manual' && (
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+                <input type="checkbox" checked={reviewReleased} onChange={(event) => setReviewReleased(event.target.checked)} />
+                Công bố quyền xem lại ngay
+              </label>
+            )}
+          </fieldset>
+        )}
         <div className="space-y-2">
           <p className="text-xs font-semibold text-slate-700">Tạo hạn nộp nhanh (tính từ hiện tại)</p>
           <div className="flex flex-wrap gap-2">
@@ -276,6 +339,9 @@ const InstructorAssignments = ({ courseId, modules = [] }) => {
                 </div>
                 <label className="block max-w-xs text-xs font-semibold">Đáp án đúng
                   <select value={question.correct_option} onChange={(event) => updateQuestion(index, 'correct_option', event.target.value)} className="mt-1 block w-full border border-slate-300 bg-white px-3 py-2 text-sm">{['A', 'B', 'C', 'D'].map((option) => <option key={option}>{option}</option>)}</select>
+                </label>
+                <label className="block text-xs font-semibold">Giải thích đáp án (không bắt buộc)
+                  <textarea value={question.explanation || ''} onChange={(event) => updateQuestion(index, 'explanation', event.target.value)} rows={2} className="mt-1 block w-full border border-slate-300 px-3 py-2 text-sm" />
                 </label>
               </fieldset>
             ))}

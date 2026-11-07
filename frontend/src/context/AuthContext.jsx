@@ -120,13 +120,17 @@ export const AuthProvider = ({ children }) => {
         return { success: true, requiresOtp: true, message: result.message };
       }
 
-      await authApi.confirmRegistrationOtp({
+      const registration = await authApi.confirmRegistrationOtp({
         username,
         email,
         password,
         role: userRole,
         otp,
       });
+
+      if (registration.approval_required) {
+        return { success: true, requiresApproval: true, message: registration.message };
+      }
 
       const loginResult = await login(username, password);
       return loginResult;

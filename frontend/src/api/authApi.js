@@ -50,6 +50,16 @@ export const authApi = {
     return response.data;
   },
 
+  getProfileSummary: async () => {
+    const response = await api.get('profile/summary/');
+    return response.data;
+  },
+
+  recordCourseAccess: async (courseId) => {
+    const response = await api.post('profile/access-activity/', { course_id: courseId });
+    return response.data;
+  },
+
   // POST /password/change/ - Change user password
   changePassword: async (newPassword) => {
     const response = await api.post('password/change/', { new_password: newPassword });

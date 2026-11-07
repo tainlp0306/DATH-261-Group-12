@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useEffectEvent, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { 
   X, 
   Clock, 
@@ -12,16 +13,25 @@ import {
 import toast from 'react-hot-toast';
 import { courseApi } from '../api/courseApi';
 
-const QuizModal = ({ quiz, onClose, onCompleted, submitAnswers = courseApi.submitQuiz }) => {
+const QuizModal = ({
+  quiz, onClose, onCompleted, onRetry, reviewUrl,
+  submitAnswers = courseApi.submitQuiz,
+}) => {
   const [answers, setAnswers] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState(null);
+  const [attemptId, setAttemptId] = useState(quiz.attemptId);
   const answersRef = useRef(answers);
   const submittingRef = useRef(false);
   
   // Timer in seconds
   const initialSeconds = (quiz.time_limit_minutes || 15) * 60;
-  const [timeLeft, setTimeLeft] = useState(initialSeconds);
+  const [timeLeft, setTimeLeft] = useState(() => {
+    const startedAtMilliseconds = new Date(quiz.startedAt).getTime();
+    return Number.isNaN(startedAtMilliseconds)
+      ? initialSeconds
+      : Math.max(0, initialSeconds - Math.floor((Date.now() - startedAtMilliseconds) / 1000));
+  });
   const timerRef = useRef(null);
 
   const submitQuizAnswers = async () => {
@@ -30,9 +40,9 @@ const QuizModal = ({ quiz, onClose, onCompleted, submitAnswers = courseApi.submi
     clearInterval(timerRef.current);
     try {
       setSubmitting(true);
-      const res = await submitAnswers(quiz.id, answersRef.current);
+      const res = await submitAnswers(quiz.id, answersRef.current, attemptId);
       setResult(res);
-      toast.success('Đã chấm điểm xong!');
+      toast.success(res.score == null ? 'Đã nộp bài.' : 'Đã chấm điểm xong!');
       if (onCompleted) {
         onCompleted(res);
       }
@@ -96,11 +106,22 @@ const QuizModal = ({ quiz, onClose, onCompleted, submitAnswers = courseApi.submi
     submitQuizAnswers();
   };
 
-  const handleRetry = () => {
+  const handleRetry = async () => {
+    if (!onRetry) return;
+    try {
+      const attempt = await onRetry();
+      setAttemptId(attempt.id);
+      setTimeLeft(Math.max(
+        0,
+        initialSeconds - Math.floor((Date.now() - new Date(attempt.started_at).getTime()) / 1000),
+      ));
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Không thể bắt đầu lượt làm mới.');
+      return;
+    }
     setResult(null);
     answersRef.current = {};
     setAnswers({});
-    setTimeLeft(initialSeconds);
   };
 
   const questions = quiz.questions || [];
@@ -158,43 +179,55 @@ const QuizModal = ({ quiz, onClose, onCompleted, submitAnswers = courseApi.submi
 
               <div>
                 <h3 className="text-2xl font-black text-slate-900">
-                  {result.score >= 5.0 ? '🎉 Chúc mừng bạn đã hoàn thành!' : '💪 Hãy cố gắng hơn ở lần sau!'}
+                  {result.score == null
+                    ? 'Bài làm đã được ghi nhận'
+                    : result.score >= 5.0 ? '🎉 Chúc mừng bạn đã hoàn thành!' : '💪 Hãy cố gắng hơn ở lần sau!'}
                 </h3>
                 <p className="text-sm text-slate-500 mt-1">
-                  Kết quả bài kiểm tra tự động của hệ thống LingoSphere
+                  {result.score == null
+                    ? 'Kết quả và nội dung xem lại sẽ được mở theo cài đặt của giảng viên.'
+                    : 'Kết quả bài kiểm tra tự động của hệ thống LingoSphere'}
                 </p>
               </div>
 
               {/* Score Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-lg mx-auto">
-                <div className="p-4 bg-indigo-50/70 border border-indigo-100 rounded-2xl">
-                  <span className="text-xs text-indigo-600 font-semibold block">Điểm số</span>
-                  <span className="text-2xl font-black text-indigo-700">{result.score} / 10</span>
-                </div>
+              {result.score != null && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-lg mx-auto">
+                  <div className="p-4 bg-indigo-50/70 border border-indigo-100 rounded-2xl">
+                    <span className="text-xs text-indigo-600 font-semibold block">Điểm số</span>
+                    <span className="text-2xl font-black text-indigo-700">{result.score} / 10</span>
+                  </div>
 
-                <div className="p-4 bg-emerald-50/70 border border-emerald-100 rounded-2xl">
-                  <span className="text-xs text-emerald-600 font-semibold block">Số câu đúng</span>
-                  <span className="text-2xl font-black text-emerald-700">
-                    {result.correct_count ?? 0} / {result.total_questions ?? questions.length}
-                  </span>
-                </div>
+                  <div className="p-4 bg-emerald-50/70 border border-emerald-100 rounded-2xl">
+                    <span className="text-xs text-emerald-600 font-semibold block">Số câu đúng</span>
+                    <span className="text-2xl font-black text-emerald-700">
+                      {result.correct_count ?? 0} / {result.total_questions ?? questions.length}
+                    </span>
+                  </div>
 
-                <div className="p-4 bg-purple-50/70 border border-purple-100 rounded-2xl col-span-2 sm:col-span-1">
-                  <span className="text-xs text-purple-600 font-semibold block">Đánh giá</span>
-                  <span className="text-sm font-bold text-purple-700">
-                    {result.score >= 8.0 ? 'Xuất sắc' : result.score >= 5.0 ? 'Đạt yêu cầu' : 'Chưa đạt'}
-                  </span>
+                  <div className="p-4 bg-purple-50/70 border border-purple-100 rounded-2xl col-span-2 sm:col-span-1">
+                    <span className="text-xs text-purple-600 font-semibold block">Đánh giá</span>
+                    <span className="text-sm font-bold text-purple-700">
+                      {result.score >= 8.0 ? 'Xuất sắc' : result.score >= 5.0 ? 'Đạt yêu cầu' : 'Chưa đạt'}
+                    </span>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {/* Action Buttons */}
               <div className="flex flex-wrap items-center justify-center gap-3 pt-4 border-t border-slate-100">
                 <button
                   onClick={handleRetry}
+                  disabled={!onRetry}
                   className="inline-flex items-center gap-2 px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition-colors cursor-pointer"
                 >
                   <RefreshCw className="w-4 h-4" /> Làm lại bài
                 </button>
+                {result.review_available && reviewUrl && (
+                  <Link to={reviewUrl} onClick={onClose} className="inline-flex items-center gap-2 border border-indigo-200 px-5 py-2.5 text-xs font-bold text-indigo-700 hover:bg-indigo-50">
+                    Xem lại bài làm
+                  </Link>
+                )}
                 <button
                   onClick={onClose}
                   className="inline-flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"

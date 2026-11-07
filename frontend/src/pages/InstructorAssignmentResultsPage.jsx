@@ -70,24 +70,41 @@ const InstructorAssignmentResultsPage = () => {
           <table className="w-full min-w-[720px] border-collapse text-left text-sm">
             <thead className="bg-slate-100">
               <tr>
-                <th className="sticky left-0 border-b border-r border-slate-300 bg-slate-100 px-4 py-3">Học viên</th>
+                <th className="sticky left-0 border-b border-r border-slate-300 bg-slate-100 px-4 py-3">Học viên / lượt</th>
                 {data.questions.map((question, index) => <th key={question.id} className="min-w-40 border-b border-r border-slate-300 px-4 py-3">Câu {index + 1}: {question.content}</th>)}
-                <th className="border-b border-slate-300 px-4 py-3">Điểm</th>
+                <th className="border-b border-slate-300 px-4 py-3">Điểm (0–10)</th>
+                <th className="border-b border-slate-300 px-4 py-3">Lưu</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
               {data.submissions.map((submission) => (
                 <tr key={submission.id}>
-                  <th scope="row" className="sticky left-0 border-r border-slate-200 bg-white px-4 py-3 font-semibold">{submission.student_name}</th>
+                  <th scope="row" className="sticky left-0 border-r border-slate-200 bg-white px-4 py-3 font-semibold">
+                    {submission.student_name}
+                    <span className="mt-1 block text-xs font-normal text-slate-500">Lượt {submission.attempt_number}</span>
+                  </th>
                   {data.questions.map((question) => {
                     const answer = submission.answers?.[String(question.id)] || '—';
                     const isCorrect = answer !== '—' && answer === question.correct_option;
                     return <td key={question.id} className="border-r border-slate-200 px-4 py-3"><span className={isCorrect ? 'font-semibold text-emerald-800' : answer === '—' ? 'text-slate-400' : 'font-semibold text-rose-700'}>{answer}{answer !== '—' && ` · ${isCorrect ? 'Đúng' : 'Sai'}`}</span></td>;
                   })}
-                  <td className="px-4 py-3 font-semibold">{submission.score ?? '—'} / 10</td>
+                  <td className="px-4 py-3">
+                    <input
+                      aria-label={`Điểm lượt ${submission.attempt_number} của ${submission.student_name}`}
+                      type="number" min="0" max="10" step="0.1"
+                      value={grades[submission.id] ?? ''}
+                      onChange={(event) => setGrades((current) => ({ ...current, [submission.id]: event.target.value }))}
+                      className="w-24 border border-slate-300 px-2 py-1.5"
+                    />
+                  </td>
+                  <td className="px-4 py-3">
+                    <button type="button" onClick={() => saveScore(submission.id)} disabled={savingId === submission.id} className="inline-flex items-center gap-1 border border-emerald-800 px-3 py-1.5 text-xs font-semibold text-emerald-900 disabled:opacity-50">
+                      <Save className="h-3.5 w-3.5" /> {savingId === submission.id ? 'Đang lưu' : 'Lưu'}
+                    </button>
+                  </td>
                 </tr>
               ))}
-              {data.submissions.length === 0 && <tr><td colSpan={data.questions.length + 2} className="px-4 py-10 text-center text-slate-500">Chưa có học viên nộp bài kiểm tra.</td></tr>}
+              {data.submissions.length === 0 && <tr><td colSpan={data.questions.length + 3} className="px-4 py-10 text-center text-slate-500">Chưa có học viên nộp bài kiểm tra.</td></tr>}
             </tbody>
           </table>
         </div>
