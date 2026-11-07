@@ -105,7 +105,7 @@ const LoginPage = () => {
         <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
           <div>
             <label className="block text-sm font-semibold text-slate-700 mb-1.5">
-              Tên đăng nhập (Username)
+              Email hoặc tên đăng nhập
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
@@ -116,7 +116,7 @@ const LoginPage = () => {
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="Nhập tên đăng nhập của bạn"
+                placeholder="Nhập email hoặc tên đăng nhập"
                 className="w-full pl-11 pr-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all text-sm"
               />
             </div>
