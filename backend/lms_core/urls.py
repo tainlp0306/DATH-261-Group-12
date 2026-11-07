@@ -23,7 +23,7 @@ from .views import (
     SubmitAssignmentView, CourseAssignmentListCreateView, AssignmentSubmissionListView,
     AssignmentGradingView, AssignmentDetailView, AssignmentQuestionAttachmentView,
     CourseVocabularyListCreateView, PracticeAttemptView,
-    AssignmentAttemptStartView, AssignmentReviewView,
+    AssignmentAttemptStartView, AssignmentAttemptAnswersView, AssignmentReviewView,
     LearnerAccessActivityView, LearnerProfileSummaryView,
 )
 from .analytics_views import (
@@ -101,6 +101,7 @@ urlpatterns = [
     path('questions/<int:question_id>/attachment/', AssignmentQuestionAttachmentView.as_view(), name='question_attachment'),
     path('assignments/<int:assignment_id>/submit/', SubmitAssignmentView.as_view(), name='submit_assignment'),
     path('assignments/<int:assignment_id>/attempts/start/', AssignmentAttemptStartView.as_view(), name='assignment_attempt_start'),
+    path('assignments/<int:assignment_id>/attempts/<int:submission_id>/', AssignmentAttemptAnswersView.as_view(), name='assignment_attempt_answers'),
     path('assignments/<int:assignment_id>/submissions/<int:submission_id>/review/', AssignmentReviewView.as_view(), name='assignment_submission_review'),
     path('assignments/<int:assignment_id>/submissions/', AssignmentSubmissionListView.as_view(), name='assignment_submissions'),
     path('assignments/<int:assignment_id>/grading/', AssignmentGradingView.as_view(), name='assignment_grading'),
