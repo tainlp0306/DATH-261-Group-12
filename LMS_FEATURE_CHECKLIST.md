@@ -178,7 +178,8 @@ Các mục dưới đây đã được cập nhật trong code. Những thao tá
 | Lịch sử nhiều lượt và xem lại quiz | Trang quiz mở lịch sử trước; hiển thị tất cả lượt, điểm trung bình/cao nhất và nút riêng để bắt đầu/tiếp tục; đáp án lượt đang làm được lưu ở server; instructor tùy chọn giới hạn số lượt | Backend regression test kiểm tra lưu/khôi phục đáp án và chặn vượt lượt; frontend lint/build passed; chưa xác nhận thủ công trên trình duyệt |
 | Setup bài kiểm tra | Form instructor cấu hình chế độ xem lại, thời điểm mở và nội dung được phép xem | Build passed; chưa xác nhận thủ công trên trình duyệt |
 | Hồ sơ học viên | Backend cung cấp lượt truy cập/hoạt động theo tuần và bảng điểm theo khóa; quyền xem/chỉnh điểm được giới hạn theo vai trò/sở hữu | Backend suite: 55 tests passed trên SQLite in-memory; chưa xác nhận thủ công trên trình duyệt |
-| Duyệt đăng ký instructor | Đăng ký instructor ở trạng thái chờ; admin duyệt để kích hoạt, tài khoản đang chờ không đăng nhập được | Backend suite: 55 tests passed trên SQLite in-memory; chưa xác nhận thủ công trên trình duyệt |
+| Đăng nhập và quản lý tài khoản | Đăng nhập bằng email hoặc tên đăng nhập; giảng viên chờ duyệt nhận thông báo rõ; danh sách admin trả toàn bộ tài khoản, không bỏ sót các trang sau | Backend regression tests passed; frontend lint/build passed |
+| Duyệt đăng ký instructor | Đăng ký instructor ở trạng thái chờ; admin duyệt để kích hoạt, tài khoản đang chờ không đăng nhập được | Backend regression tests passed; chưa xác nhận thủ công trên trình duyệt |
 | AI | Đã loại khỏi phạm vi theo quyết định giảm tải; không triển khai AI/RAG | — |
 
 ## Thành phần nâng cao (đang triển khai)

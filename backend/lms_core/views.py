@@ -23,6 +23,9 @@ import secrets
 from smtplib import SMTPException
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.exceptions import ValidationError as DRFValidationError
+from rest_framework.exceptions import AuthenticationFailed
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+from rest_framework_simplejwt.views import TokenObtainPairView
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from google.auth.transport import requests as google_requests
@@ -104,6 +107,35 @@ class RegisterView(generics.CreateAPIView):
             {'error': 'Đăng ký cần xác minh email. Hãy dùng request-registration-otp và confirm-registration-otp.'},
             status=status.HTTP_405_METHOD_NOT_ALLOWED,
         )
+
+
+class EmailOrUsernameTokenSerializer(TokenObtainPairSerializer):
+    def validate(self, attrs):
+        identifier = str(attrs.get(User.USERNAME_FIELD, '')).strip()
+        password = attrs.get('password', '')
+        user = None
+        if '@' in identifier:
+            matches = User.objects.filter(email__iexact=identifier)
+            if matches.count() == 1:
+                user = matches.first()
+                attrs[User.USERNAME_FIELD] = user.get_username()
+        else:
+            user = User.objects.filter(username__iexact=identifier).first()
+
+        if (
+            user
+            and user.role == 'instructor'
+            and not user.is_approved
+            and user.check_password(password)
+        ):
+            raise AuthenticationFailed(
+                'Tài khoản giảng viên đang chờ quản trị viên phê duyệt.'
+            )
+        return super().validate(attrs)
+
+
+class EmailOrUsernameTokenView(TokenObtainPairView):
+    serializer_class = EmailOrUsernameTokenSerializer
 
 
 class OTPRequestView(APIView):
@@ -830,6 +862,7 @@ class LessonProgressUpdateView(APIView):
 class AdminUserListView(generics.ListAPIView):
     serializer_class = UserSerializer
     permission_classes = [IsAdmin]
+    pagination_class = None
 
     def get_queryset(self):
         role = self.request.query_params.get('role')

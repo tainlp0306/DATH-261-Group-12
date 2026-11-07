@@ -621,6 +621,13 @@ class NewFeatureApiTests(APITestCase):
 			format='json',
 		)
 		self.assertEqual(login_response.status_code, status.HTTP_401_UNAUTHORIZED)
+		email_login_response = self.client.post(
+			reverse('token_obtain_pair'),
+			{'username': instructor.email, 'password': 'Valid-Pass-237!'},
+			format='json',
+		)
+		self.assertEqual(email_login_response.status_code, status.HTTP_401_UNAUTHORIZED)
+		self.assertIn('chờ quản trị viên phê duyệt', email_login_response.data['detail'])
 
 		learner = User.objects.create_user(
 			username='approval-test-learner', password='test-password', role='learner',
@@ -638,6 +645,35 @@ class NewFeatureApiTests(APITestCase):
 		instructor.refresh_from_db()
 		self.assertTrue(instructor.is_active)
 		self.assertTrue(instructor.is_approved)
+
+	def test_login_accepts_registered_email(self):
+		response = self.client.post(
+			reverse('token_obtain_pair'),
+			{'username': self.learner.email.upper(), 'password': 'test-password'},
+			format='json',
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertIn('access', response.data)
+
+	def test_admin_user_list_includes_users_beyond_default_page_size(self):
+		for index in range(15):
+			User.objects.create_user(
+				username=f'listed-user-{index}',
+				email=f'listed-user-{index}@example.com',
+				password='test-password',
+				role='learner',
+			)
+		self.client.force_authenticate(self.admin)
+
+		response = self.client.get(reverse('admin_user_list'))
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(len(response.data), User.objects.count())
+		self.assertIn(
+			'listed-user-14@example.com',
+			{user['email'] for user in response.data},
+		)
 
 	@override_settings(
 		EMAIL_BACKEND='lms_core.email_backends.MailjetEmailBackend',
