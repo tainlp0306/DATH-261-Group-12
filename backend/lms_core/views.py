@@ -39,7 +39,7 @@ from .permissions import IsAdmin, IsCourseOwnerOrAdmin, IsInstructor, IsInstruct
 from .models import (
     AdminLog, Comment, Course, EmailOTP, Enrollment, Lesson, LessonPage, LessonProgress, Module,
     Notification, Quiz, Question, QuizSubmission, Report, Test, TestSubmission, User,
-    Assignment, Submission,
+    Assignment, Submission, LearnerAccessSession,
 )
 from .analytics import log_learning_event
 from .email_backends import EmailDeliveryError
@@ -241,9 +241,16 @@ class RegistrationOTPConfirmView(APIView):
                 email=email,
                 password=password,
                 role=role,
+                is_active=role != 'instructor',
+                is_approved=role != 'instructor',
             )
             otp.consumed_at = timezone.now()
             otp.save(update_fields=['consumed_at'])
+        if role == 'instructor':
+            return Response({
+                'message': 'Đăng ký đã được gửi. Tài khoản giảng viên cần quản trị viên phê duyệt trước khi đăng nhập.',
+                'approval_required': True,
+            }, status=status.HTTP_201_CREATED)
         return Response(UserSerializer(user).data, status=status.HTTP_201_CREATED)
 
 class UserProfileView(generics.RetrieveUpdateAPIView):
@@ -252,6 +259,119 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
 
     def get_object(self):
         return self.request.user
+
+
+class LearnerAccessActivityView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request):
+        if request.user.role != 'learner':
+            return Response({'error': 'Chỉ ghi nhận hoạt động của học viên.'}, status=status.HTTP_403_FORBIDDEN)
+        try:
+            course_id = int(request.data.get('course_id'))
+        except (TypeError, ValueError):
+            return Response({'course_id': ['Mã khóa học không hợp lệ.']}, status=status.HTTP_400_BAD_REQUEST)
+        if not Enrollment.objects.filter(student=request.user, course_id=course_id).exists():
+            return Response({'error': 'Bạn chưa ghi danh khóa học này.'}, status=status.HTTP_403_FORBIDDEN)
+
+        now = timezone.now()
+        session = LearnerAccessSession.objects.select_for_update().filter(
+            student=request.user,
+            course_id=course_id,
+            last_active_at__gt=now - timedelta(minutes=5),
+        ).order_by('-last_active_at').first()
+        if session is None:
+            LearnerAccessSession.objects.create(
+                student=request.user,
+                course_id=course_id,
+                started_at=now,
+                last_active_at=now,
+            )
+        else:
+            elapsed = max(0, int((now - session.last_active_at).total_seconds()))
+            session.active_seconds += min(elapsed, 75)
+            session.last_active_at = now
+            session.save(update_fields=['active_seconds', 'last_active_at'])
+        return Response({'recorded': True})
+
+
+class LearnerProfileSummaryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if request.user.role != 'learner':
+            return Response({'error': 'Bảng theo dõi này chỉ dành cho học viên.'}, status=status.HTTP_403_FORBIDDEN)
+
+        now = timezone.now()
+        week_start = (now - timedelta(days=now.weekday())).replace(
+            hour=0, minute=0, second=0, microsecond=0,
+        )
+        sessions = list(LearnerAccessSession.objects.filter(
+            student=request.user,
+            started_at__gte=week_start,
+        ).order_by('started_at').values('started_at', 'last_active_at', 'active_seconds'))
+        daily_activity = []
+        for day_offset in range(7):
+            day_start = week_start + timedelta(days=day_offset)
+            day_end = day_start + timedelta(days=1)
+            day_sessions = [
+                session for session in sessions
+                if day_start <= session['started_at'] < day_end
+            ]
+            daily_activity.append({
+                'date': day_start.date().isoformat(),
+                'visits': len(day_sessions),
+                'active_seconds': sum(session['active_seconds'] for session in day_sessions),
+            })
+
+        courses = []
+        enrollments = Enrollment.objects.filter(student=request.user).select_related('course').order_by('course__title')
+        for enrollment in enrollments:
+            grades = []
+            assignments = Assignment.objects.filter(
+                course=enrollment.course,
+                is_published=True,
+            ).order_by('created_at')
+            for assignment in assignments:
+                submission = Submission.objects.filter(
+                    assignment=assignment,
+                    student=request.user,
+                    status='submitted',
+                ).order_by('-attempt_number', '-submitted_at').first()
+                if submission is None:
+                    continue
+                score = submission.score
+                if assignment.assignment_type == 'quiz' and (
+                    not assignment.review_available(submission.submitted_at)
+                    or not assignment.review_show_score
+                ):
+                    score = None
+                grades.append({
+                    'assignment_id': assignment.id,
+                    'assignment_title': assignment.title,
+                    'assignment_type': assignment.assignment_type,
+                    'attempt_number': submission.attempt_number,
+                    'submitted_at': submission.submitted_at,
+                    'score': score,
+                    'feedback': submission.feedback,
+                })
+            courses.append({
+                'course_id': enrollment.course_id,
+                'course_title': enrollment.course.title,
+                'grades': grades,
+            })
+
+        latest_access = LearnerAccessSession.objects.filter(
+            student=request.user,
+        ).order_by('-last_active_at').values_list('last_active_at', flat=True).first()
+        return Response({
+            'latest_access': latest_access,
+            'visits_this_week': len(sessions),
+            'active_seconds_this_week': sum(session['active_seconds'] for session in sessions),
+            'daily_activity': daily_activity,
+            'courses': courses,
+        })
 
 class LogoutView(APIView):
     permission_classes = (IsAuthenticated,)
@@ -380,6 +500,11 @@ class ToggleAccountStatusView(APIView):
             if user.pk == request.user.pk:
                 return Response(
                     {"error": "Không thể tự khóa hoặc mở khóa tài khoản đang đăng nhập."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if user.role == 'instructor' and not user.is_approved:
+                return Response(
+                    {'error': 'Hãy phê duyệt yêu cầu giảng viên trước khi mở khóa tài khoản.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             user.is_active = not user.is_active
@@ -713,6 +838,28 @@ class AdminUserListView(generics.ListAPIView):
         if role:
             queryset = queryset.filter(role=role)
         return queryset
+
+
+class AdminInstructorRequestsView(generics.ListAPIView):
+    serializer_class = UserSerializer
+    permission_classes = [IsAdmin]
+    pagination_class = None
+    queryset = User.objects.filter(role='instructor', is_approved=False).order_by('date_joined')
+
+
+class AdminInstructorApprovalView(APIView):
+    permission_classes = [IsAdmin]
+
+    def post(self, request, user_id):
+        instructor = get_object_or_404(User, pk=user_id, role='instructor', is_approved=False)
+        instructor.is_approved = True
+        instructor.is_active = True
+        instructor.save(update_fields=['is_approved', 'is_active'])
+        AdminLog.objects.create(
+            admin=request.user,
+            action=f'Phê duyệt tài khoản giảng viên {instructor.username} (ID: {instructor.id})',
+        )
+        return Response(UserSerializer(instructor).data)
 
 class AdminUserDeleteView(generics.DestroyAPIView):
     queryset = User.objects.all()
@@ -1215,6 +1362,15 @@ class CourseAssignmentListCreateView(generics.ListCreateAPIView):
     def get_course(self):
         return get_object_or_404(Course, pk=self.kwargs['course_id'])
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        course = self.get_course()
+        user = self.request.user
+        if user.role == 'admin' or course.instructor_id == user.id:
+            context['include_correct_options'] = True
+            context['include_review_settings'] = True
+        return context
+
     def get_queryset(self):
         course = self.get_course()
         user = self.request.user
@@ -1280,7 +1436,10 @@ class AssignmentDetailView(APIView):
         if self.has_management_access(request.user, assignment):
             return Response(AssignmentSerializer(
                 assignment,
-                context={'request': request, 'view': self, 'include_correct_options': True},
+                context={
+                    'request': request, 'view': self,
+                    'include_correct_options': True, 'include_review_settings': True,
+                },
             ).data)
         if request.user.role != 'learner' or not Enrollment.objects.filter(
             student=request.user, course=assignment.course
@@ -1308,7 +1467,10 @@ class AssignmentDetailView(APIView):
             assignment,
             data=payload,
             partial=partial,
-            context={'request': request, 'view': self},
+            context={
+                'request': request, 'view': self,
+                'include_correct_options': True, 'include_review_settings': True,
+            },
         )
         serializer.is_valid(raise_exception=True)
         was_published = assignment.is_published
@@ -1329,7 +1491,10 @@ class AssignmentDetailView(APIView):
             )
         return Response(AssignmentSerializer(
             updated,
-            context={'request': request, 'view': self, 'include_correct_options': True},
+            context={
+                'request': request, 'view': self,
+                'include_correct_options': True, 'include_review_settings': True,
+            },
         ).data)
 
 
@@ -1380,6 +1545,8 @@ class AssignmentGradingView(APIView):
             'description': assignment.description,
             'assignment_type': assignment.assignment_type,
             'deadline': assignment.deadline,
+            'review_mode': assignment.review_mode,
+            'review_released': assignment.review_released,
             'module_title': assignment.module.title if assignment.module else None,
             'questions': [],
             'submissions': [],
@@ -1394,6 +1561,7 @@ class AssignmentGradingView(APIView):
                     'option_c': question.option_c,
                     'option_d': question.option_d,
                     'correct_option': question.correct_option,
+                    'explanation': question.explanation,
                 }
                 for question in assignment.questions.all()
             ]
@@ -1401,24 +1569,36 @@ class AssignmentGradingView(APIView):
                 {
                     'id': submission.id,
                     'student_name': submission.student.username,
+                    'attempt_number': submission.attempt_number,
+                    'status': submission.status,
+                    'started_at': submission.started_at,
                     'submitted_at': submission.submitted_at,
                     'score': submission.score,
                     'answers': submission.answers,
                 }
-                for submission in assignment.submissions.all().order_by('student__username')
+                for submission in assignment.submissions.filter(status='submitted').order_by(
+                    'student__username', 'attempt_number',
+                )
             ]
         else:
-            data['submissions'] = [
-                {
+            latest_submissions = []
+            seen_students = set()
+            for submission in assignment.submissions.filter(status='submitted').order_by(
+                'student__username', '-attempt_number', '-submitted_at',
+            ):
+                if submission.student_id in seen_students:
+                    continue
+                seen_students.add(submission.student_id)
+                latest_submissions.append({
                     'id': submission.id,
                     'student_name': submission.student.username,
+                    'attempt_number': submission.attempt_number,
                     'submitted_at': submission.submitted_at,
                     'submitted_file': request.build_absolute_uri(submission.submitted_file.url)
                     if submission.submitted_file else None,
                     'score': submission.score,
-                }
-                for submission in assignment.submissions.all().order_by('student__username')
-            ]
+                })
+            data['submissions'] = latest_submissions
         return Response(data)
 
 
@@ -1435,20 +1615,121 @@ class AssignmentSubmissionListView(generics.ListAPIView):
         if user.role == 'admin' or (
             user.role == 'instructor' and assignment.course.instructor_id == user.id
         ):
-            return Submission.objects.filter(assignment=assignment).select_related('student').order_by('-submitted_at')
+            return Submission.objects.filter(assignment=assignment).select_related(
+                'student', 'assignment',
+            ).order_by('-attempt_number', '-started_at')
         if user.role == 'learner' and Enrollment.objects.filter(student=user, course=assignment.course).exists():
             if not assignment.is_published or (assignment.publish_at and assignment.publish_at > timezone.now()):
                 from rest_framework.exceptions import PermissionDenied
                 raise PermissionDenied('Bài tập chưa được mở.')
-            return Submission.objects.filter(assignment=assignment, student=user).select_related('student')
+            return Submission.objects.filter(
+                assignment=assignment, student=user,
+            ).select_related('student', 'assignment').order_by('-attempt_number', '-started_at')
         from rest_framework.exceptions import PermissionDenied
         raise PermissionDenied('Bạn không có quyền xem bài nộp này.')
+
+
+class AssignmentAttemptStartView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, assignment_id):
+        assignment = get_object_or_404(
+            Assignment.objects.select_for_update().select_related('course'),
+            pk=assignment_id,
+        )
+        if request.user.role != 'learner':
+            return Response({'error': 'Chỉ học viên mới được làm bài.'}, status=status.HTTP_403_FORBIDDEN)
+        if not assignment.is_published or (assignment.publish_at and assignment.publish_at > timezone.now()):
+            return Response({'error': 'Bài tập chưa được mở.'}, status=status.HTTP_403_FORBIDDEN)
+        if not Enrollment.objects.filter(student=request.user, course=assignment.course).exists():
+            return Response({'error': 'Bạn cần đăng ký khóa học trước khi làm bài.'}, status=status.HTTP_403_FORBIDDEN)
+        if assignment.deadline and timezone.now() > assignment.deadline:
+            return Response({'error': 'Đã quá hạn nộp bài.'}, status=status.HTTP_400_BAD_REQUEST)
+        if assignment.assignment_type != 'quiz':
+            return Response({'error': 'Chỉ bài trắc nghiệm cần bắt đầu lượt làm.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        attempt = Submission.objects.filter(
+            assignment=assignment,
+            student=request.user,
+            status='in_progress',
+        ).order_by('-attempt_number').first()
+        now = timezone.now()
+        time_limit = assignment.time_limit_minutes or 15
+        if attempt and (now - attempt.started_at).total_seconds() > time_limit * 60 + 60:
+            attempt.status = Submission.EXPIRED
+            attempt.submitted_at = attempt.started_at + timedelta(minutes=time_limit)
+            attempt.save(update_fields=['status', 'submitted_at'])
+            attempt = None
+        if attempt is None:
+            attempt_number = Submission.objects.filter(
+                assignment=assignment, student=request.user,
+            ).count() + 1
+            attempt = Submission.objects.create(
+                assignment=assignment,
+                student=request.user,
+                attempt_number=attempt_number,
+                started_at=now,
+                status='in_progress',
+            )
+        return Response({
+            'id': attempt.id,
+            'attempt_number': attempt.attempt_number,
+            'started_at': attempt.started_at,
+            'time_limit_minutes': assignment.time_limit_minutes or 15,
+        }, status=status.HTTP_201_CREATED)
+
+
+class AssignmentReviewView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, assignment_id, submission_id):
+        assignment = get_object_or_404(Assignment, pk=assignment_id)
+        if request.user.role != 'learner' or not Enrollment.objects.filter(
+            student=request.user, course=assignment.course,
+        ).exists():
+            return Response({'error': 'Bạn không có quyền xem lại bài này.'}, status=status.HTTP_403_FORBIDDEN)
+        submission = get_object_or_404(
+            Submission,
+            pk=submission_id,
+            assignment=assignment,
+            student=request.user,
+            status='submitted',
+        )
+        if not assignment.review_available(submission.submitted_at):
+            return Response({'error': 'Bài làm chưa được mở quyền xem lại.'}, status=status.HTTP_403_FORBIDDEN)
+
+        questions = []
+        for question in assignment.questions.all():
+            item = {
+                'id': question.id,
+                'content': question.content,
+                'option_a': question.option_a,
+                'option_b': question.option_b,
+                'option_c': question.option_c,
+                'option_d': question.option_d,
+            }
+            if assignment.review_show_submitted_answers:
+                item['selected_option'] = submission.answers.get(str(question.id), '')
+            if assignment.review_show_correct_answers:
+                item['correct_option'] = question.correct_option
+            if assignment.review_show_explanations:
+                item['explanation'] = question.explanation
+            questions.append(item)
+        return Response({
+            'assignment_title': assignment.title,
+            'attempt_number': submission.attempt_number,
+            'submitted_at': submission.submitted_at,
+            'score': submission.score if assignment.review_show_score else None,
+            'questions': questions,
+        })
 
 
 class SubmitAssignmentView(APIView):
     permission_classes = [IsAuthenticated]
     parser_classes = [parsers.MultiPartParser, parsers.FormParser, parsers.JSONParser]
 
+    @transaction.atomic
     def post(self, request, assignment_id):
         assignment = get_object_or_404(Assignment.objects.select_related('course'), pk=assignment_id)
         if request.user.role != 'learner':
@@ -1457,7 +1738,8 @@ class SubmitAssignmentView(APIView):
             return Response({'error': 'Bài tập chưa được mở.'}, status=status.HTTP_403_FORBIDDEN)
         if not Enrollment.objects.filter(student=request.user, course=assignment.course).exists():
             return Response({'error': 'Bạn cần đăng ký khóa học trước khi nộp bài.'}, status=status.HTTP_403_FORBIDDEN)
-        if assignment.deadline and timezone.now() > assignment.deadline:
+        now = timezone.now()
+        if assignment.deadline and now > assignment.deadline:
             return Response({'error': 'Đã quá hạn nộp bài!'}, status=status.HTTP_400_BAD_REQUEST)
 
         if assignment.assignment_type == 'quiz':
@@ -1467,6 +1749,39 @@ class SubmitAssignmentView(APIView):
             questions = list(assignment.questions.all())
             if not questions:
                 return Response({'error': 'Bài trắc nghiệm chưa có câu hỏi.'}, status=status.HTTP_400_BAD_REQUEST)
+            submission_id = request.data.get('submission_id')
+            if submission_id:
+                submission = get_object_or_404(
+                    Submission.objects.select_for_update(),
+                    pk=submission_id,
+                    assignment=assignment,
+                    student=request.user,
+                    status='in_progress',
+                )
+            else:
+                submission = Submission.objects.filter(
+                    assignment=assignment,
+                    student=request.user,
+                    status='in_progress',
+                ).order_by('-attempt_number').first()
+                if submission is None:
+                    submission = Submission.objects.create(
+                        assignment=assignment,
+                        student=request.user,
+                        attempt_number=Submission.objects.filter(
+                            assignment=assignment, student=request.user,
+                        ).count() + 1,
+                        started_at=now,
+                        status='in_progress',
+                    )
+            time_limit = (assignment.time_limit_minutes or 15) * 60
+            elapsed = max(0, int((now - submission.started_at).total_seconds()))
+            if elapsed > time_limit + 60:
+                submission.status = Submission.EXPIRED
+                submission.submitted_at = submission.started_at + timedelta(seconds=time_limit)
+                submission.save(update_fields=['status', 'submitted_at'])
+                return Response({'error': 'Thời gian làm bài đã hết.'}, status=status.HTTP_400_BAD_REQUEST)
+
             normalized_answers = {}
             for question in questions:
                 answer = str(answers.get(str(question.id), '')).upper()
@@ -1481,15 +1796,12 @@ class SubmitAssignmentView(APIView):
                 if normalized_answers[str(question.id)] == question.correct_option.upper()
             )
             score = round(correct_count / len(questions) * 10, 2)
-            submission, _ = Submission.objects.update_or_create(
-                assignment=assignment,
-                student=request.user,
-                defaults={
-                    'score': score,
-                    'feedback': 'Hệ thống chấm tự động',
-                    'answers': normalized_answers,
-                },
-            )
+            submission.score = score
+            submission.feedback = 'Hệ thống chấm tự động'
+            submission.answers = normalized_answers
+            submission.status = 'submitted'
+            submission.submitted_at = now
+            submission.save(update_fields=['score', 'feedback', 'answers', 'status', 'submitted_at'])
             log_learning_event(
                 actor=request.user,
                 course=assignment.course,
@@ -1500,29 +1812,44 @@ class SubmitAssignmentView(APIView):
                     'score': score,
                     'correct_count': correct_count,
                     'total_questions': len(questions),
+                    'attempt_number': submission.attempt_number,
                 },
             )
-            return Response({
+            review_available = assignment.review_available(submission.submitted_at)
+            result = {
                 'id': submission.id,
+                'attempt_number': submission.attempt_number,
+                'submitted_at': submission.submitted_at,
                 'message': 'Nộp bài thành công.',
-                'score': score,
-                'correct_count': correct_count,
+                'review_available': review_available,
                 'total_questions': len(questions),
-            }, status=status.HTTP_200_OK)
+            }
+            if review_available and assignment.review_show_score:
+                result.update({'score': score, 'correct_count': correct_count})
+            return Response(result, status=status.HTTP_200_OK)
 
         uploaded_file = request.FILES.get('file') or request.FILES.get('submitted_file')
         if not uploaded_file:
             return Response({'file': ['Vui lòng đính kèm tệp.']}, status=status.HTTP_400_BAD_REQUEST)
-        submission, _ = Submission.objects.update_or_create(
+        attempt_number = Submission.objects.filter(
+            assignment=assignment, student=request.user,
+        ).count() + 1
+        submission = Submission.objects.create(
             assignment=assignment,
             student=request.user,
-            defaults={'submitted_file': uploaded_file, 'score': None, 'feedback': ''},
+            submitted_file=uploaded_file,
+            attempt_number=attempt_number,
+            started_at=now,
+            submitted_at=now,
+            status='submitted',
         )
         log_learning_event(
             actor=request.user,
             course=assignment.course,
             assignment=assignment,
             event_type='file_submitted',
-            payload={'assignment_id': assignment.id},
+            payload={'assignment_id': assignment.id, 'attempt_number': attempt_number},
         )
-        return Response(SubmissionSerializer(submission, context={'request': request}).data, status=status.HTTP_200_OK)
+        return Response(SubmissionSerializer(
+            submission, context={'request': request},
+        ).data, status=status.HTTP_201_CREATED)

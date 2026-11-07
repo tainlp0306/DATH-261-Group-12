@@ -21,7 +21,7 @@ from urllib.parse import parse_qs, urlparse
 from config.settings import _normalize_email_password
 from .email_backends import EmailDeliveryError, MailjetEmailBackend
 from .models import (
-	AdminLog, Assignment, Comment, Course, EmailOTP, Enrollment, Intervention, LearningActivity,
+	AdminLog, Assignment, Comment, Course, EmailOTP, Enrollment, Intervention, LearnerAccessSession, LearningActivity,
 	LearningActivityAttempt, LearningActivityItem, LearningEvent, Lesson, LessonProgress,
 	Module, Notification, Question, Report, Submission, Test, TestSubmission,
 )
@@ -591,6 +591,54 @@ class NewFeatureApiTests(APITestCase):
 		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 		self.assertEqual(User.objects.get(username='otp-user').email, 'otp-user@example.com')
 
+	@override_settings(EMAIL_BACKEND='django.core.mail.backends.locmem.EmailBackend')
+	def test_instructor_registration_waits_for_admin_approval(self):
+		self.client.post(
+			reverse('request_registration_otp'),
+			{'email': 'pending-instructor@example.com'},
+			format='json',
+		)
+		otp = mail.outbox[0].body.split('là ')[1].split('.')[0]
+		response = self.client.post(
+			reverse('confirm_registration_otp'),
+			{
+				'username': 'pending-instructor',
+				'email': 'pending-instructor@example.com',
+				'password': 'Valid-Pass-237!',
+				'role': 'instructor',
+				'otp': otp,
+			},
+			format='json',
+		)
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertTrue(response.data['approval_required'])
+		instructor = User.objects.get(username='pending-instructor')
+		self.assertFalse(instructor.is_active)
+		self.assertFalse(instructor.is_approved)
+		login_response = self.client.post(
+			reverse('token_obtain_pair'),
+			{'username': instructor.username, 'password': 'Valid-Pass-237!'},
+			format='json',
+		)
+		self.assertEqual(login_response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+		learner = User.objects.create_user(
+			username='approval-test-learner', password='test-password', role='learner',
+		)
+		self.client.force_authenticate(learner)
+		self.assertEqual(
+			self.client.post(reverse('admin_instructor_approve', args=[instructor.pk])).status_code,
+			status.HTTP_403_FORBIDDEN,
+		)
+		self.client.force_authenticate(self.admin)
+		response = self.client.get(reverse('admin_instructor_requests'))
+		self.assertEqual([item['id'] for item in response.data], [instructor.pk])
+		response = self.client.post(reverse('admin_instructor_approve', args=[instructor.pk]))
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		instructor.refresh_from_db()
+		self.assertTrue(instructor.is_active)
+		self.assertTrue(instructor.is_approved)
+
 	@override_settings(
 		EMAIL_BACKEND='lms_core.email_backends.MailjetEmailBackend',
 		MAILJET_API_KEY='test-api-key',
@@ -904,7 +952,7 @@ class AssignmentAssessmentApiTests(APITestCase):
 			format='json',
 		)
 		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-		self.assertNotIn('correct_option', response.data['questions'][0])
+		self.assertEqual(response.data['questions'][0]['correct_option'], 'B')
 		assignment = Assignment.objects.get(pk=response.data['id'])
 		question = Question.objects.get(assignment=assignment)
 		Enrollment.objects.create(student=self.learner, course=self.course)
@@ -920,7 +968,27 @@ class AssignmentAssessmentApiTests(APITestCase):
 		response = self.client.get(reverse('assignment_submissions', args=[assignment.pk]))
 		self.assertEqual(response.status_code, status.HTTP_200_OK)
 		self.assertEqual(response.data[0]['score'], 10)
-		self.assertEqual(response.data[0]['answers'][str(question.pk)], 'B')
+		self.assertNotIn('answers', response.data[0])
+		response = self.client.get(reverse(
+			'assignment_submission_review', args=[assignment.pk, response.data[0]['id']],
+		))
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response.data['questions'][0]['selected_option'], 'B')
+		self.assertNotIn('correct_option', response.data['questions'][0])
+		new_attempt = self.client.post(
+			reverse('assignment_attempt_start', args=[assignment.pk]),
+			format='json',
+		)
+		self.assertEqual(new_attempt.status_code, status.HTTP_201_CREATED)
+		second_submission = self.client.post(
+			reverse('submit_assignment', args=[assignment.pk]),
+			{'submission_id': new_attempt.data['id'], 'answers': {str(question.pk): 'A'}},
+			format='json',
+		)
+		self.assertEqual(second_submission.status_code, status.HTTP_200_OK)
+		self.assertEqual(second_submission.data['attempt_number'], 2)
+		self.assertEqual(Submission.objects.filter(assignment=assignment, student=self.learner).count(), 2)
+
 		self.client.force_authenticate(self.instructor)
 		response = self.client.get(reverse('assignment_grading', args=[assignment.pk]))
 		self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -943,6 +1011,102 @@ class AssignmentAssessmentApiTests(APITestCase):
 			self.client.get(reverse('assignment_grading', args=[assignment.pk])).status_code,
 			status.HTTP_403_FORBIDDEN,
 		)
+
+	def test_review_policy_hides_results_until_manual_release_and_filters_content(self):
+		assignment = Assignment.objects.create(
+			course=self.course,
+			title='Released quiz',
+			assignment_type='quiz',
+			review_mode='manual',
+			review_show_score=False,
+			review_show_correct_answers=True,
+			review_show_explanations=True,
+		)
+		question = Question.objects.create(
+			assignment=assignment,
+			content='Question',
+			option_a='A', option_b='B', option_c='C', option_d='D',
+			correct_option='A',
+			explanation='This is the explanation.',
+		)
+		Enrollment.objects.create(student=self.learner, course=self.course)
+		self.client.force_authenticate(self.learner)
+		assignment_detail = self.client.get(reverse('assignment_detail', args=[assignment.pk]))
+		self.assertNotIn('correct_option', assignment_detail.data['questions'][0])
+		self.assertNotIn('explanation', assignment_detail.data['questions'][0])
+		submitted = self.client.post(
+			reverse('submit_assignment', args=[assignment.pk]),
+			{'answers': {str(question.pk): 'B'}},
+			format='json',
+		)
+		self.assertEqual(submitted.status_code, status.HTTP_200_OK)
+		self.assertNotIn('score', submitted.data)
+		self.assertFalse(submitted.data['review_available'])
+		history = self.client.get(reverse('assignment_submissions', args=[assignment.pk]))
+		self.assertNotIn('score', history.data[0])
+		self.assertEqual(
+			self.client.get(reverse(
+				'assignment_submission_review', args=[assignment.pk, submitted.data['id']],
+			)).status_code,
+			status.HTTP_403_FORBIDDEN,
+		)
+
+		self.client.force_authenticate(self.instructor)
+		released = self.client.patch(
+			reverse('assignment_detail', args=[assignment.pk]),
+			{'review_released': True},
+			format='json',
+		)
+		self.assertEqual(released.status_code, status.HTTP_200_OK)
+		self.client.force_authenticate(self.learner)
+		review = self.client.get(reverse(
+			'assignment_submission_review', args=[assignment.pk, submitted.data['id']],
+		))
+		self.assertEqual(review.status_code, status.HTTP_200_OK)
+		self.assertIsNone(review.data['score'])
+		self.assertEqual(review.data['questions'][0]['correct_option'], 'A')
+		self.assertEqual(review.data['questions'][0]['explanation'], 'This is the explanation.')
+
+	def test_profile_summary_tracks_access_sessions_and_course_grades(self):
+		Enrollment.objects.create(student=self.learner, course=self.course)
+		assignment = Assignment.objects.create(
+			course=self.course, title='Profile quiz', assignment_type='quiz',
+		)
+		question = Question.objects.create(
+			assignment=assignment, content='Question',
+			option_a='A', option_b='B', option_c='C', option_d='D',
+			correct_option='A',
+		)
+		self.client.force_authenticate(self.learner)
+		self.client.post(
+			reverse('submit_assignment', args=[assignment.pk]),
+			{'answers': {str(question.pk): 'A'}},
+			format='json',
+		)
+
+		first_access = timezone.now()
+		for timestamp in (
+			first_access,
+			first_access + timedelta(minutes=1),
+			first_access + timedelta(minutes=6),
+		):
+			with patch('lms_core.views.timezone.now', return_value=timestamp):
+				response = self.client.post(
+					reverse('profile_access_activity'),
+					{'course_id': self.course.pk},
+					format='json',
+				)
+				self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+		self.assertEqual(
+			LearnerAccessSession.objects.filter(student=self.learner, course=self.course).count(),
+			2,
+		)
+		summary = self.client.get(reverse('profile_summary'))
+		self.assertEqual(summary.status_code, status.HTTP_200_OK)
+		self.assertEqual(summary.data['visits_this_week'], 2)
+		self.assertGreaterEqual(summary.data['active_seconds_this_week'], 60)
+		self.assertEqual(summary.data['courses'][0]['grades'][0]['score'], 10)
 
 	def test_editing_quiz_recalculates_existing_submission_score(self):
 		assignment = Assignment.objects.create(
@@ -1089,7 +1253,7 @@ class AssignmentAssessmentApiTests(APITestCase):
 				{'file': SimpleUploadedFile('work.txt', b'assignment answer')},
 				format='multipart',
 			)
-		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 		submission = Submission.objects.get(pk=response.data['id'])
 
 		self.client.force_authenticate(self.instructor)

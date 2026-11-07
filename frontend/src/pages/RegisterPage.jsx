@@ -23,6 +23,7 @@ const RegisterPage = () => {
   const [otpRequested, setOtpRequested] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [approvalMessage, setApprovalMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
   const { register } = useAuth();
@@ -48,6 +49,10 @@ const RegisterPage = () => {
     if (result.success) {
       if (result.requiresOtp) {
         setOtpRequested(true);
+        return;
+      }
+      if (result.requiresApproval) {
+        setApprovalMessage(result.message);
         return;
       }
       if (role === 'instructor') {
@@ -81,6 +86,11 @@ const RegisterPage = () => {
           <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 flex items-start gap-3 text-rose-700 text-sm">
             <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
             <span>{error}</span>
+          </div>
+        )}
+        {approvalMessage && (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800" role="status">
+            {approvalMessage}
           </div>
         )}
 
@@ -119,7 +129,7 @@ const RegisterPage = () => {
               >
                 <GraduationCap className={`w-6 h-6 ${role === 'instructor' ? 'text-purple-600' : 'text-slate-400'}`} />
                 <span className="text-sm font-bold">Giảng viên</span>
-                <span className="text-[11px] text-slate-500 text-center">Tạo & quản lý các khóa học</span>
+                <span className="text-[11px] text-slate-500 text-center">Cần quản trị viên phê duyệt</span>
               </button>
             </div>
           </div>
@@ -218,7 +228,7 @@ const RegisterPage = () => {
           {/* Submit */}
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || Boolean(approvalMessage)}
             className="w-full mt-6 py-3.5 px-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-semibold rounded-xl shadow-md shadow-indigo-200 hover:shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-60"
           >
             {loading ? (

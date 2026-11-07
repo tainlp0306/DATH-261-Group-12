@@ -19,6 +19,8 @@ const AssignmentPage = () => {
   const [course, setCourse] = useState(null);
   const [assignment, setAssignment] = useState(null);
   const [submission, setSubmission] = useState(null);
+  const [attemptId, setAttemptId] = useState(null);
+  const [attemptStartedAt, setAttemptStartedAt] = useState(null);
   const [answers, setAnswers] = useState({});
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -44,16 +46,32 @@ const AssignmentPage = () => {
         if (Number(assignmentData.course) !== Number(courseId)) throw new Error('Bài tập không thuộc khóa học này.');
         const submissions = isAuthenticated ? await courseApi.getAssignmentSubmissions(assignmentId) : [];
         const submissionList = Array.isArray(submissions) ? submissions : submissions?.results || [];
+        let activeAttempt = null;
+        const hasActiveAttempt = submissionList.some((item) => item.status === 'in_progress');
+        const hasSubmittedAttempt = submissionList.some((item) => item.status === 'submitted');
+        if (
+          assignmentData.assignment_type === 'quiz'
+          && isAuthenticated
+          && isLearner
+          && (!hasSubmittedAttempt || hasActiveAttempt)
+        ) {
+          activeAttempt = await courseApi.startAssignmentAttempt(assignmentId);
+        }
         if (!active) return;
         setCourse(courseData);
         setAssignment(assignmentData);
-        setSubmission(submissionList[0] || null);
+        setSubmission(
+          !hasActiveAttempt
+            ? submissionList.find((item) => item.status === 'submitted') || null
+            : null,
+        );
         setNow(Date.now());
-        if (assignmentData.assignment_type === 'quiz') {
-          setQuizEndTime(Date.now() + (assignmentData.time_limit_minutes || 15) * 60 * 1000);
+        if (activeAttempt) {
+          setAttemptId(activeAttempt.id);
+          setAttemptStartedAt(activeAttempt.started_at);
+          setQuizEndTime(new Date(activeAttempt.started_at).getTime() + (activeAttempt.time_limit_minutes || 15) * 60 * 1000);
           autoSubmitted.current = false;
         }
-        if (submissionList[0]?.answers) setAnswers(submissionList[0].answers);
       } catch (error) {
         if (!active) return;
         console.error('Failed to load assignment:', error);
@@ -64,7 +82,7 @@ const AssignmentPage = () => {
     };
     load();
     return () => { active = false; };
-  }, [courseId, assignmentId, isAuthenticated]);
+  }, [courseId, assignmentId, isAuthenticated, isLearner]);
 
   const expired = Boolean(assignment?.deadline && new Date(assignment.deadline).getTime() < now);
   const quizSeconds = assignment?.assignment_type === 'quiz'
@@ -77,14 +95,31 @@ const AssignmentPage = () => {
   const submitQuizAnswers = async () => {
     setSubmitting(true);
     try {
-      const result = await courseApi.submitAssignment(assignment.id, { answers });
-      setSubmission((current) => ({ ...current, ...result, submitted_at: new Date().toISOString(), answers: { ...answers } }));
-      toast.success(`Đã nộp bài. Điểm: ${result.score} / 10`);
+      const result = await courseApi.submitAssignment(assignment.id, {
+        answers,
+        submission_id: attemptId,
+      });
+      setSubmission({ ...result, status: 'submitted', started_at: attemptStartedAt });
+      toast.success(result.score == null ? 'Đã nộp bài.' : `Đã nộp bài. Điểm: ${result.score} / 10`);
     } catch (error) {
       console.error('Failed to submit quiz:', error);
       toast.error(error.response?.data?.error || 'Nộp bài thất bại.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const startNextAttempt = async () => {
+    try {
+      const attempt = await courseApi.startAssignmentAttempt(assignment.id);
+      setAttemptId(attempt.id);
+      setAttemptStartedAt(attempt.started_at);
+      setQuizEndTime(new Date(attempt.started_at).getTime() + (attempt.time_limit_minutes || 15) * 60 * 1000);
+      setAnswers({});
+      setSubmission(null);
+      autoSubmitted.current = false;
+    } catch (error) {
+      toast.error(error.response?.data?.error || 'Không thể bắt đầu lượt làm mới.');
     }
   };
 
@@ -180,6 +215,21 @@ const AssignmentPage = () => {
 
       {!isAuthenticated || !isLearner ? (
         <p className="mt-6 border-l-2 border-amber-500 pl-3 text-sm text-amber-900">Đăng nhập bằng tài khoản học viên đã đăng ký khóa học để làm và nộp bài.</p>
+      ) : assignment.assignment_type === 'quiz' && submission?.status === 'submitted' ? (
+        <section className="mt-6 space-y-4 border border-emerald-200 bg-emerald-50 p-5">
+          <h2 className="font-semibold text-emerald-950">Lượt làm đã được nộp</h2>
+          {submission.score != null
+            ? <p className="text-sm text-emerald-900">Điểm: {submission.score} / 10</p>
+            : <p className="text-sm text-emerald-900">Kết quả sẽ xuất hiện theo cài đặt của giảng viên.</p>}
+          <div className="flex flex-wrap gap-3">
+            {submission.review_available && (
+              <Link to={`/courses/${courseId}/assignments/${assignmentId}/submissions/${submission.id}/review`} className="text-sm font-semibold text-emerald-900 underline">
+                Xem lại bài làm
+              </Link>
+            )}
+            <button type="button" onClick={startNextAttempt} className="text-sm font-semibold text-emerald-900 underline">Làm lượt mới</button>
+          </div>
+        </section>
       ) : (
         <form onSubmit={submit} className="mt-6 space-y-6">
           {assignment.assignment_type === 'quiz' ? (

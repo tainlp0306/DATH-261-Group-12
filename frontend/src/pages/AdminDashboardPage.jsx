@@ -34,6 +34,7 @@ const AdminDashboardPage = () => {
   const normalizedCurrentUserRole = normalizeRole(currentUser?.role);
   const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'users' | 'courses'
   const [users, setUsers] = useState([]);
+  const [instructorRequests, setInstructorRequests] = useState([]);
   const [courses, setCourses] = useState([]);
   const [stats, setStats] = useState(null);
   const [statsLoading, setStatsLoading] = useState(true);
@@ -44,6 +45,7 @@ const AdminDashboardPage = () => {
   const [togglingUserId, setTogglingUserId] = useState(null);
   const [deletingUserId, setDeletingUserId] = useState(null);
   const [deletingCourseId, setDeletingCourseId] = useState(null);
+  const [approvingInstructorId, setApprovingInstructorId] = useState(null);
 
   const fetchStats = async () => {
     try {
@@ -68,6 +70,15 @@ const AdminDashboardPage = () => {
     }
   };
 
+  const fetchInstructorRequests = async () => {
+    try {
+      setInstructorRequests(await adminApi.getInstructorRequests());
+    } catch (err) {
+      console.error('Failed to load instructor approval requests:', err);
+      toast.error('Không thể tải yêu cầu đăng ký giảng viên.');
+    }
+  };
+
   const fetchCourses = async () => {
     try {
       const data = await adminApi.getAllCourses();
@@ -80,7 +91,7 @@ const AdminDashboardPage = () => {
 
   const loadAllData = async () => {
     setLoading(true);
-    await Promise.all([fetchStats(), fetchUsers(roleFilter), fetchCourses()]);
+    await Promise.all([fetchStats(), fetchUsers(roleFilter), fetchCourses(), fetchInstructorRequests()]);
     setLoading(false);
   };
 
@@ -113,6 +124,23 @@ const AdminDashboardPage = () => {
     }
   };
 
+  const handleApproveInstructor = async (instructor) => {
+    try {
+      setApprovingInstructorId(instructor.id);
+      await adminApi.approveInstructor(instructor.id);
+      setInstructorRequests((current) => current.filter((item) => item.id !== instructor.id));
+      setUsers((current) => current.map((item) => (
+        item.id === instructor.id ? { ...item, is_active: true, is_approved: true } : item
+      )));
+      toast.success(`Đã phê duyệt giảng viên ${instructor.username}.`);
+      fetchStats();
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Không thể phê duyệt tài khoản giảng viên.');
+    } finally {
+      setApprovingInstructorId(null);
+    }
+  };
+
   const handleToggleCoursePublish = async (course) => {
     try {
       const updated = await courseApi.updateCourse(course.id, {
@@ -138,6 +166,7 @@ const AdminDashboardPage = () => {
       setDeletingUserId(user.id);
       await adminApi.deleteUser(user.id);
       setUsers((previous) => previous.filter((item) => item.id !== user.id));
+      setInstructorRequests((previous) => previous.filter((item) => item.id !== user.id));
       toast.success(`Đã xóa tài khoản "${user.username}".`);
       fetchStats();
     } catch (err) {
@@ -320,6 +349,15 @@ const AdminDashboardPage = () => {
           }`}
         >
           <BookOpen className="w-4 h-4" /> Toàn bộ Khóa học ({courses.length})
+        </button>
+
+        <button
+          onClick={() => setActiveTab('instructor-requests')}
+          className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all shrink-0 cursor-pointer ${
+            activeTab === 'instructor-requests' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <GraduationCap className="w-4 h-4" /> Duyệt giảng viên ({instructorRequests.length})
         </button>
 
         <button
@@ -532,6 +570,7 @@ const AdminDashboardPage = () => {
                   <tbody className="divide-y divide-slate-100 text-slate-700">
                     {filteredUsers.map((u) => {
                       const isActive = u.is_active !== false;
+                      const isPending = normalizeRole(u.role) === 'instructor' && u.is_approved === false;
                       return (
                         <tr key={u.id} className="hover:bg-slate-50/70 transition-colors">
                           <td className="px-5 py-4 font-mono text-xs text-slate-400">#{u.id}</td>
@@ -553,7 +592,9 @@ const AdminDashboardPage = () => {
                                   : 'bg-rose-100 text-rose-700 border border-rose-200'
                               }`}
                             >
-                              {isActive ? (
+                              {isPending ? (
+                                <><Activity className="w-3 h-3" /> Chờ phê duyệt</>
+                              ) : isActive ? (
                                 <>
                                   <CheckCircle2 className="w-3 h-3" /> Hoạt động
                                 </>
@@ -568,7 +609,7 @@ const AdminDashboardPage = () => {
                             <div className="flex items-center justify-end gap-2">
                               <button
                                 onClick={() => handleToggleUserStatus(u)}
-                                disabled={u.id === currentUser?.id || togglingUserId === u.id || deletingUserId === u.id}
+                                disabled={isPending || u.id === currentUser?.id || togglingUserId === u.id || deletingUserId === u.id}
                                 title={u.id === currentUser?.id ? 'Bạn không thể khóa hoặc mở khóa tài khoản của chính mình.' : undefined}
                                 className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer ${
                                   isActive
@@ -576,13 +617,16 @@ const AdminDashboardPage = () => {
                                     : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
                                 } disabled:opacity-50`}
                               >
-                                {togglingUserId === u.id ? (
+                                {isPending ? (
+                                  <><Activity className="w-3.5 h-3.5" /> Chờ duyệt</>
+                                ) : togglingUserId === u.id ? (
                                   <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
                                 ) : isActive ? (
                                   <><Lock className="w-3.5 h-3.5" /> Khoá tài khoản</>
                                 ) : (
                                   <><Unlock className="w-3.5 h-3.5" /> Mở khoá</>
                                 )}
+
                               </button>
                               {u.id !== currentUser?.id && (
                                 <button
@@ -608,6 +652,41 @@ const AdminDashboardPage = () => {
             </div>
           )}
         </div>
+      )}
+
+      {activeTab === 'instructor-requests' && (
+        <section className="space-y-4">
+          <header>
+            <h2 className="text-lg font-bold text-slate-900">Yêu cầu đăng ký giảng viên</h2>
+            <p className="mt-1 text-sm text-slate-500">Tài khoản chỉ có thể đăng nhập sau khi được quản trị viên phê duyệt.</p>
+          </header>
+          {instructorRequests.length === 0 ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500">Không có yêu cầu đang chờ.</div>
+          ) : (
+            <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase text-slate-500">
+                  <tr><th className="px-5 py-3">Tên đăng nhập</th><th className="px-5 py-3">Email</th><th className="px-5 py-3">Ngày đăng ký</th><th className="px-5 py-3 text-right">Thao tác</th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {instructorRequests.map((instructor) => (
+                    <tr key={instructor.id}>
+                      <td className="px-5 py-4 font-semibold text-slate-900">{instructor.username}</td>
+                      <td className="px-5 py-4 text-slate-600">{instructor.email || '—'}</td>
+                      <td className="px-5 py-4 text-slate-600">{instructor.date_joined ? new Date(instructor.date_joined).toLocaleDateString('vi-VN') : '—'}</td>
+                      <td className="px-5 py-4 text-right">
+                        <button type="button" onClick={() => handleApproveInstructor(instructor)} disabled={approvingInstructorId === instructor.id} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-bold text-white disabled:opacity-50">
+                          {approvingInstructorId === instructor.id ? 'Đang duyệt...' : 'Phê duyệt'}
+                        </button>
+                        <button type="button" onClick={() => handleDeleteUser(instructor)} disabled={deletingUserId === instructor.id} className="ml-2 rounded-lg border border-rose-200 px-3 py-2 text-xs font-bold text-rose-700 disabled:opacity-50">Từ chối & xóa</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       )}
 
       {/* Tab 2: All Courses Management */}

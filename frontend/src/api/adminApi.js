@@ -14,6 +14,16 @@ export const adminApi = {
     return response.data.results || response.data;
   },
 
+  getInstructorRequests: async () => {
+    const response = await api.get('admin/instructor-requests/');
+    return response.data.results || response.data;
+  },
+
+  approveInstructor: async (userId) => {
+    const response = await api.post(`admin/instructor-requests/${userId}/approve/`);
+    return response.data;
+  },
+
   // POST /admin/users/:user_id/toggle-status/
   toggleUserStatus: async (userId) => {
     const response = await api.post(`admin/users/${userId}/toggle-status/`);

@@ -5,6 +5,7 @@ import { GoogleOAuthProvider } from '@react-oauth/google';
 import { AuthProvider } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import ProtectedRoute from './components/ProtectedRoute';
+import LearnerAccessTracker from './components/LearnerAccessTracker';
 
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
@@ -12,6 +13,7 @@ import CourseListPage from './pages/CourseListPage';
 import CourseDetailPage from './pages/CourseDetailPage';
 import LessonPage from './pages/LessonPage';
 import AssignmentPage from './pages/AssignmentPage';
+import AssignmentReviewPage from './pages/AssignmentReviewPage';
 import LearningActivityPage from './pages/LearningActivityPage';
 import InstructorAssignmentResultsPage from './pages/InstructorAssignmentResultsPage';
 import CreateCoursePage from './pages/CreateCoursePage';
@@ -31,6 +33,7 @@ function App() {
     <AuthProvider>
       <BrowserRouter>
         <Toaster position="top-right" toastOptions={{ duration: 4000 }} />
+        <LearnerAccessTracker />
         <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900 selection:bg-indigo-500 selection:text-white">
           <Navbar />
           <main className="flex-1">
@@ -72,6 +75,14 @@ function App() {
               <Route path="/courses/:id" element={<CourseDetailPage />} />
               <Route path="/courses/:id/lessons/:lessonId" element={<LessonPage />} />
               <Route path="/courses/:id/assignments/:assignmentId" element={<AssignmentPage />} />
+              <Route
+                path="/courses/:id/assignments/:assignmentId/submissions/:submissionId/review"
+                element={(
+                  <ProtectedRoute allowedRoles={['learner']}>
+                    <AssignmentReviewPage />
+                  </ProtectedRoute>
+                )}
+              />
               <Route path="/courses/:id/activities/:activityId" element={<LearningActivityPage />} />
 
               {/* Instructor Protected Routes */}

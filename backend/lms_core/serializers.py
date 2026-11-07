@@ -14,9 +14,12 @@ User = get_user_model()
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ('id', 'username', 'email', 'password', 'role', 'is_active', 'date_joined', 'last_login')
+        fields = (
+            'id', 'username', 'email', 'password', 'role', 'is_active',
+            'is_approved', 'date_joined', 'last_login',
+        )
         extra_kwargs = {'password': {'write_only': True}}
-        read_only_fields = ('is_active', 'date_joined', 'last_login')
+        read_only_fields = ('is_active', 'is_approved', 'date_joined', 'last_login')
 
     def create(self, validated_data):
         user = User.objects.create_user(
@@ -281,9 +284,15 @@ class QuestionSerializer(serializers.ModelSerializer):
 class AssignmentQuestionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Question
-        fields = ['id', 'content', 'option_a', 'option_b', 'option_c', 'option_d', 'correct_option', 'attachment']
+        fields = [
+            'id', 'content', 'option_a', 'option_b', 'option_c', 'option_d',
+            'correct_option', 'explanation', 'attachment',
+        ]
         read_only_fields = ['id']
-        extra_kwargs = {'correct_option': {'write_only': True}}
+        extra_kwargs = {
+            'correct_option': {'write_only': True},
+            'explanation': {'write_only': True},
+        }
 
     def validate_correct_option(self, value):
         normalized = value.upper()
@@ -305,7 +314,9 @@ class AssignmentSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'course', 'module', 'title', 'description', 'prompt_file',
             'assignment_type', 'time_limit_minutes', 'deadline', 'is_published',
-            'publish_at', 'questions', 'created_at',
+            'publish_at', 'review_mode', 'review_released', 'review_show_score',
+            'review_show_submitted_answers', 'review_show_correct_answers',
+            'review_show_explanations', 'questions', 'created_at',
         ]
         read_only_fields = ['id', 'course', 'created_at']
 
@@ -320,6 +331,12 @@ class AssignmentSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({'questions': ['Bài trắc nghiệm cần ít nhất một câu hỏi.']})
         if assignment_type == 'file' and questions:
             raise serializers.ValidationError({'questions': ['Bài nộp tệp không nhận câu hỏi trắc nghiệm.']})
+        review_mode = attrs.get('review_mode', getattr(self.instance, 'review_mode', 'after_submission'))
+        deadline = attrs.get('deadline', getattr(self.instance, 'deadline', None))
+        if review_mode == 'after_deadline' and deadline is None:
+            raise serializers.ValidationError({
+                'deadline': ['Cần đặt hạn nộp để chỉ mở xem lại sau hạn.'],
+            })
         if self.instance and assignment_type != self.instance.assignment_type and self.instance.submissions.exists():
             raise serializers.ValidationError({
                 'assignment_type': ['Không thể đổi loại bài tập sau khi học viên đã nộp bài.'],
@@ -328,8 +345,16 @@ class AssignmentSerializer(serializers.ModelSerializer):
 
     def get_fields(self):
         fields = super().get_fields()
+        if not self.context.get('include_review_settings'):
+            for name in (
+                'review_mode', 'review_released', 'review_show_score',
+                'review_show_submitted_answers', 'review_show_correct_answers',
+                'review_show_explanations',
+            ):
+                fields[name].write_only = True
         if self.context.get('include_correct_options'):
             fields['questions'].child.fields['correct_option'].write_only = False
+            fields['questions'].child.fields['explanation'].write_only = False
         return fields
 
     def validate_module(self, value):
@@ -388,14 +413,53 @@ class AssignmentSerializer(serializers.ModelSerializer):
 
 class SubmissionSerializer(serializers.ModelSerializer):
     student_name = serializers.ReadOnlyField(source='student.username')
+    duration_seconds = serializers.SerializerMethodField()
+    review_available = serializers.SerializerMethodField()
 
     class Meta:
         model = Submission
         fields = [
             'id', 'assignment', 'student', 'student_name', 'submitted_file',
-            'score', 'feedback', 'answers', 'submitted_at',
+            'score', 'feedback', 'answers', 'attempt_number', 'started_at',
+            'submitted_at', 'status', 'duration_seconds', 'review_available',
         ]
         read_only_fields = ['student', 'score', 'feedback', 'answers', 'submitted_at']
+
+    def get_fields(self):
+        fields = super().get_fields()
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not user or user.role not in ('admin', 'instructor'):
+            fields['answers'].write_only = True
+        return fields
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        assignment = instance.assignment
+        if (
+            user
+            and user.role == 'learner'
+            and assignment.assignment_type == 'quiz'
+            and (
+                not assignment.review_available(instance.submitted_at)
+                or not assignment.review_show_score
+            )
+        ):
+            data.pop('score', None)
+        return data
+
+    def get_duration_seconds(self, instance):
+        if not instance.submitted_at:
+            return None
+        return max(0, int((instance.submitted_at - instance.started_at).total_seconds()))
+
+    def get_review_available(self, instance):
+        return (
+            instance.assignment.assignment_type == 'quiz'
+            and instance.assignment.review_available(instance.submitted_at)
+        )
 
     def validate_submitted_file(self, value):
         if value and value.size > 20 * 1024 * 1024:

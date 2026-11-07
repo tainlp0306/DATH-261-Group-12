@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
+from django.utils import timezone
 
 class User(AbstractUser):
     LEARNER = 'learner'
@@ -11,6 +12,7 @@ class User(AbstractUser):
         (ADMIN, 'Admin'),
     ]
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=LEARNER)
+    is_approved = models.BooleanField(default=True)
     
     def __str__(self):
         return f"{self.username} ({self.role})"
@@ -167,6 +169,12 @@ class SystemLog(models.Model):
 
 class Assignment(models.Model):
     ASSIGNMENT_TYPES = [('quiz', 'Trắc nghiệm'), ('file', 'Bài tập nộp tệp')]
+    REVIEW_MODES = [
+        ('none', 'Không cho xem lại'),
+        ('after_submission', 'Sau khi từng học viên nộp bài'),
+        ('after_deadline', 'Sau hạn nộp'),
+        ('manual', 'Khi giảng viên công bố'),
+    ]
     
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='assignments')
     module = models.ForeignKey(
@@ -184,8 +192,23 @@ class Assignment(models.Model):
     publish_at = models.DateTimeField(blank=True, null=True)
     time_limit_minutes = models.IntegerField(blank=True, null=True) # Dành cho quiz
     deadline = models.DateTimeField(blank=True, null=True) # Hạn chót nộp bài
+    review_mode = models.CharField(max_length=24, choices=REVIEW_MODES, default='after_submission')
+    review_released = models.BooleanField(default=False)
+    review_show_score = models.BooleanField(default=True)
+    review_show_submitted_answers = models.BooleanField(default=True)
+    review_show_correct_answers = models.BooleanField(default=False)
+    review_show_explanations = models.BooleanField(default=False)
     
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def review_available(self, submitted_at):
+        if not submitted_at or self.review_mode == 'none':
+            return False
+        if self.review_mode == 'after_submission':
+            return True
+        if self.review_mode == 'after_deadline':
+            return bool(self.deadline and self.deadline <= timezone.now())
+        return self.review_mode == 'manual' and self.review_released
 
 class Question(models.Model):
     assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE, related_name='questions')
@@ -195,9 +218,19 @@ class Question(models.Model):
     option_c = models.CharField(max_length=255)
     option_d = models.CharField(max_length=255)
     correct_option = models.CharField(max_length=1)
+    explanation = models.TextField(blank=True)
     attachment = models.FileField(upload_to='assignments/questions/', blank=True, null=True)
 
 class Submission(models.Model):
+    IN_PROGRESS = 'in_progress'
+    SUBMITTED = 'submitted'
+    EXPIRED = 'expired'
+    STATUS_CHOICES = [
+        (IN_PROGRESS, 'Đang làm'),
+        (SUBMITTED, 'Đã nộp'),
+        (EXPIRED, 'Hết giờ'),
+    ]
+
     assignment = models.ForeignKey(Assignment, on_delete=models.CASCADE, related_name='submissions')
     student = models.ForeignKey(User, on_delete=models.CASCADE)
     
@@ -206,11 +239,28 @@ class Submission(models.Model):
     score = models.FloatField(blank=True, null=True)
     feedback = models.TextField(blank=True, null=True)
     answers = models.JSONField(default=dict, blank=True)
-    
-    submitted_at = models.DateTimeField(auto_now_add=True)
-    
+    attempt_number = models.PositiveIntegerField(default=1)
+    started_at = models.DateTimeField(default=timezone.now)
+    submitted_at = models.DateTimeField(blank=True, null=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=SUBMITTED)
+
     class Meta:
-        unique_together = ('assignment', 'student')
+        ordering = ['-started_at', '-id']
+        indexes = [models.Index(fields=['student', 'assignment', '-started_at'], name='submission_student_assign_idx')]
+
+
+class LearnerAccessSession(models.Model):
+    student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='access_sessions')
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='access_sessions')
+    started_at = models.DateTimeField(default=timezone.now, db_index=True)
+    last_active_at = models.DateTimeField(default=timezone.now)
+    active_seconds = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['student', 'started_at'], name='access_student_started_idx'),
+            models.Index(fields=['course', 'started_at'], name='access_course_started_idx'),
+        ]
 
 
 class LearningEvent(models.Model):

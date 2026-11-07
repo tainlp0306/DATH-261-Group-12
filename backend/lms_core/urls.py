@@ -8,6 +8,7 @@ from .views import (
     ModuleCreateView, LessonCreaterView,
     EnrollmentListCreateView, LessonProgressUpdateView,
     AdminUserListView, AdminUserDeleteView, AdminCourseListView,
+    AdminInstructorRequestsView, AdminInstructorApprovalView,
     ModuleDetailView, LessonDetailView,
     CourseStudentsProgressView, StudentCourseProgressView,
     SubmitQuizView, LessonCommentView, AdminDashboardStatsView,
@@ -21,6 +22,8 @@ from .views import (
     RegistrationOTPRequestView, RegistrationOTPConfirmView,
     SubmitAssignmentView, CourseAssignmentListCreateView, AssignmentSubmissionListView,
     AssignmentGradingView, AssignmentDetailView, AssignmentQuestionAttachmentView,
+    AssignmentAttemptStartView, AssignmentReviewView,
+    LearnerAccessActivityView, LearnerProfileSummaryView,
 )
 from .advanced_views import (
     CourseAnalyticsView,
@@ -40,6 +43,8 @@ urlpatterns = [
     path('google-login/', GoogleLoginView.as_view(), name='google_login'),
     
     path('profile/', UserProfileView.as_view(), name='profile'),
+    path('profile/summary/', LearnerProfileSummaryView.as_view(), name='profile_summary'),
+    path('profile/access-activity/', LearnerAccessActivityView.as_view(), name='profile_access_activity'),
     path('password/change/', ChangePasswordView.as_view(), name='change_password'),
     
     path('admin/users/<int:user_id>/toggle-status/', ToggleAccountStatusView.as_view(), name='toggle_status'),
@@ -63,6 +68,8 @@ urlpatterns = [
     path('lessons/<int:lesson_id>/progress/', LessonProgressUpdateView.as_view(), name='lesson_progress_update'),   
 
     path('admin/users/', AdminUserListView.as_view(), name='admin_user_list'),
+    path('admin/instructor-requests/', AdminInstructorRequestsView.as_view(), name='admin_instructor_requests'),
+    path('admin/instructor-requests/<int:user_id>/approve/', AdminInstructorApprovalView.as_view(), name='admin_instructor_approve'),
     path('admin/courses/', AdminCourseListView.as_view(), name='admin_course_list'),
 
     path('modules/<int:pk>/', ModuleDetailView.as_view(), name='module_detail'),
@@ -89,6 +96,8 @@ urlpatterns = [
     path('assignments/<int:assignment_id>/', AssignmentDetailView.as_view(), name='assignment_detail'),
     path('questions/<int:question_id>/attachment/', AssignmentQuestionAttachmentView.as_view(), name='question_attachment'),
     path('assignments/<int:assignment_id>/submit/', SubmitAssignmentView.as_view(), name='submit_assignment'),
+    path('assignments/<int:assignment_id>/attempts/start/', AssignmentAttemptStartView.as_view(), name='assignment_attempt_start'),
+    path('assignments/<int:assignment_id>/submissions/<int:submission_id>/review/', AssignmentReviewView.as_view(), name='assignment_submission_review'),
     path('assignments/<int:assignment_id>/submissions/', AssignmentSubmissionListView.as_view(), name='assignment_submissions'),
     path('assignments/<int:assignment_id>/grading/', AssignmentGradingView.as_view(), name='assignment_grading'),
     path('courses/<int:course_id>/analytics/', CourseAnalyticsView.as_view(), name='course_analytics'),

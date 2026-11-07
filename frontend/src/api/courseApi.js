@@ -135,6 +135,16 @@ export const courseApi = {
     return response.data;
   },
 
+  startAssignmentAttempt: async (assignmentId) => {
+    const response = await api.post(`assignments/${assignmentId}/attempts/start/`);
+    return response.data;
+  },
+
+  getAssignmentReview: async (assignmentId, submissionId) => {
+    const response = await api.get(`assignments/${assignmentId}/submissions/${submissionId}/review/`);
+    return response.data;
+  },
+
   getAssignmentGrading: async (assignmentId) => {
     const response = await api.get(`assignments/${assignmentId}/grading/`);
     return response.data;
