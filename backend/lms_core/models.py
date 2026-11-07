@@ -264,6 +264,16 @@ class LearnerAccessSession(models.Model):
         ]
 
 
+class LoginEvent(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='login_events')
+    logged_in_at = models.DateTimeField(default=timezone.now, db_index=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['user', 'logged_in_at'], name='login_user_time_idx'),
+        ]
+
+
 class LearningEvent(models.Model):
     LESSON_COMPLETED = 'lesson_completed'
     QUIZ_SUBMITTED = 'quiz_submitted'

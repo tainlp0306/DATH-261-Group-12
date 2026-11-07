@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Award, BookOpen, CalendarDays, Clock3, UserRound } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { authApi } from '../api/authApi';
 import { courseApi } from '../api/courseApi';
 import { useAuth, normalizeRole } from '../context/AuthContext';
 
@@ -16,7 +17,7 @@ const ProfilePage = () => {
   useEffect(() => {
     if (currentRole !== 'learner') return undefined;
     let active = true;
-    courseApi.getProfileSummary()
+    authApi.getProfileSummary()
       .then((summary) => { if (active) setProfileSummary(summary); })
       .catch(() => { if (active) toast.error('Không thể tải thống kê và bảng điểm.'); })
       .finally(() => { if (active) setLoadingSummary(false); });
@@ -50,8 +51,9 @@ const ProfilePage = () => {
   const joinedDate = user?.date_joined
     ? new Date(user.date_joined).toLocaleDateString('vi-VN', { day: 'numeric', month: 'long', year: 'numeric' })
     : 'Chưa có dữ liệu';
-  const lastLogin = user?.last_login
-    ? new Date(user.last_login).toLocaleString('vi-VN')
+  const lastLoginAt = profileSummary?.latest_login || user?.last_login;
+  const lastLogin = lastLoginAt
+    ? new Date(lastLoginAt).toLocaleString('vi-VN')
     : 'Chưa có dữ liệu';
 
   return (
@@ -87,13 +89,16 @@ const ProfilePage = () => {
           <section className="border-y border-slate-200 py-5" aria-labelledby="weekly-activity-title">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
               <div>
-                <h2 id="weekly-activity-title" className="text-sm font-semibold text-slate-900">Tần suất truy cập theo tuần</h2>
-                <p className="mt-1 text-xs text-slate-500">Thời gian chỉ được tính khi có thao tác; dừng sau 5 phút không hoạt động.</p>
+                <h2 id="weekly-activity-title" className="text-sm font-semibold text-slate-900">Tần suất truy cập và đăng nhập theo tuần</h2>
+                <p className="mt-1 text-xs text-slate-500">Thời gian học chỉ tính khi có thao tác, dừng sau 5 phút không hoạt động. Lượt đăng nhập được ghi khi đăng nhập thành công.</p>
               </div>
               <span className="text-xs text-slate-500">
                 {loadingSummary ? 'Đang tải...' : `${profileSummary?.visits_this_week || 0} lượt tuần này · ${((profileSummary?.active_seconds_this_week || 0) / 3600).toFixed(1)} giờ`}
               </span>
             </div>
+            <p className="mt-2 text-xs font-medium text-slate-600">
+              Lượt đăng nhập tuần này: <strong className="text-slate-900">{loadingSummary ? '—' : profileSummary?.logins_this_week || 0}</strong>
+            </p>
             <div className="mt-5 grid h-28 grid-cols-7 items-end gap-2 border-b border-slate-300 pb-2" aria-hidden="true">
               {(profileSummary?.daily_activity || []).map((item) => {
                 const maxSeconds = Math.max(...(profileSummary?.daily_activity || []).map((day) => day.active_seconds), 1);
@@ -110,6 +115,18 @@ const ProfilePage = () => {
             <p className="mt-3 text-xs text-slate-500">
               Lần truy cập gần nhất: {profileSummary?.latest_access ? new Date(profileSummary.latest_access).toLocaleString('vi-VN') : 'Chưa có dữ liệu'}
             </p>
+            <ol className="mt-3 grid grid-cols-7 gap-2" aria-label="Số lần đăng nhập mỗi ngày trong tuần">
+              {(profileSummary?.daily_logins || []).map((item) => {
+                const day = new Date(`${item.date}T12:00:00`).toLocaleDateString('vi-VN', { weekday: 'short' });
+                return (
+                  <li key={item.date} className="border border-slate-200 px-2 py-2 text-center">
+                    <span className="block text-[10px] text-slate-500">{day}</span>
+                    <span className="mt-1 block text-sm font-semibold text-slate-900">{item.logins}</span>
+                    <span className="block text-[10px] text-slate-500">đăng nhập</span>
+                  </li>
+                );
+              })}
+            </ol>
           </section>
         </div>
 

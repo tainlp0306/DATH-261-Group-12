@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import update_last_login
 from django.contrib.auth.hashers import check_password, make_password
 from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
@@ -40,7 +41,7 @@ from .serializers import (
 )
 from .permissions import IsAdmin, IsCourseOwnerOrAdmin, IsInstructor, IsInstructorOrAdmin
 from .models import (
-    AdminLog, Comment, Course, EmailOTP, Enrollment, Lesson, LessonPage, LessonProgress, Module,
+    AdminLog, Comment, Course, EmailOTP, Enrollment, Lesson, LessonPage, LessonProgress, LoginEvent, Module,
     Notification, Quiz, Question, QuizSubmission, Report, Test, TestSubmission, User,
     Assignment, Submission, LearnerAccessSession,
 )
@@ -131,11 +132,21 @@ class EmailOrUsernameTokenSerializer(TokenObtainPairSerializer):
             raise AuthenticationFailed(
                 'Tài khoản giảng viên đang chờ quản trị viên phê duyệt.'
             )
-        return super().validate(attrs)
+        tokens = super().validate(attrs)
+        if user is None:
+            user = User.objects.filter(username__iexact=attrs[User.USERNAME_FIELD]).first()
+        if user is not None:
+            record_successful_login(user)
+        return tokens
 
 
 class EmailOrUsernameTokenView(TokenObtainPairView):
     serializer_class = EmailOrUsernameTokenSerializer
+
+
+def record_successful_login(user):
+    LoginEvent.objects.create(user=user)
+    update_last_login(None, user)
 
 
 class OTPRequestView(APIView):
@@ -343,6 +354,11 @@ class LearnerProfileSummaryView(APIView):
             started_at__gte=week_start,
         ).order_by('started_at').values('started_at', 'last_active_at', 'active_seconds'))
         daily_activity = []
+        daily_logins = []
+        login_events = list(LoginEvent.objects.filter(
+            user=request.user,
+            logged_in_at__gte=week_start,
+        ).order_by('logged_in_at').values_list('logged_in_at', flat=True))
         for day_offset in range(7):
             day_start = week_start + timedelta(days=day_offset)
             day_end = day_start + timedelta(days=1)
@@ -354,6 +370,10 @@ class LearnerProfileSummaryView(APIView):
                 'date': day_start.date().isoformat(),
                 'visits': len(day_sessions),
                 'active_seconds': sum(session['active_seconds'] for session in day_sessions),
+            })
+            daily_logins.append({
+                'date': day_start.date().isoformat(),
+                'logins': sum(day_start <= logged_in_at < day_end for logged_in_at in login_events),
             })
 
         courses = []
@@ -396,11 +416,17 @@ class LearnerProfileSummaryView(APIView):
         latest_access = LearnerAccessSession.objects.filter(
             student=request.user,
         ).order_by('-last_active_at').values_list('last_active_at', flat=True).first()
+        latest_login = LoginEvent.objects.filter(
+            user=request.user,
+        ).order_by('-logged_in_at').values_list('logged_in_at', flat=True).first()
         return Response({
             'latest_access': latest_access,
             'visits_this_week': len(sessions),
             'active_seconds_this_week': sum(session['active_seconds'] for session in sessions),
             'daily_activity': daily_activity,
+            'latest_login': latest_login,
+            'logins_this_week': len(login_events),
+            'daily_logins': daily_logins,
             'courses': courses,
         })
 
@@ -519,6 +545,7 @@ class GoogleLoginView(APIView):
                 user.save(update_fields=['password'])
         if not user.is_active:
             return Response({'error': 'Tài khoản đã bị vô hiệu hóa.'}, status=status.HTTP_403_FORBIDDEN)
+        record_successful_login(user)
         refresh = RefreshToken.for_user(user)
         return Response({'access': str(refresh.access_token), 'refresh': str(refresh)})
 

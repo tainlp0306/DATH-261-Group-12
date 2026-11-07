@@ -23,7 +23,7 @@ from .email_backends import EmailDeliveryError, MailjetEmailBackend
 from .models import (
 	AdminLog, Assignment, Comment, Course, EmailOTP, Enrollment, Intervention, LearnerAccessSession, LearningActivity,
 	LearningActivityAttempt, LearningActivityItem, LearningEvent, Lesson, LessonProgress,
-	Module, Notification, Question, Report, Submission, Test, TestSubmission,
+	LoginEvent, Module, Notification, Question, Report, Submission, Test, TestSubmission,
 )
 
 User = get_user_model()
@@ -476,7 +476,20 @@ class NewFeatureApiTests(APITestCase):
 		self.assertEqual(response.status_code, status.HTTP_200_OK)
 		self.assertIn('access', response.data)
 		self.assertIn('refresh', response.data)
-		self.assertEqual(User.objects.get(email='google-learner@example.com').role, 'learner')
+		user = User.objects.get(email='google-learner@example.com')
+		self.assertEqual(user.role, 'learner')
+		self.assertEqual(LoginEvent.objects.filter(user=user).count(), 1)
+		user.refresh_from_db()
+		self.assertIsNotNone(user.last_login)
+
+	def test_successful_password_login_is_recorded(self):
+		response = self.client.post(
+			reverse('token_obtain_pair'),
+			{'username': self.learner.username, 'password': 'test-password'},
+			format='json',
+		)
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertEqual(LoginEvent.objects.filter(user=self.learner).count(), 1)
 
 	def test_learner_can_withdraw_own_enrollment_only(self):
 		enrollment = Enrollment.objects.create(student=self.learner, course=self.course)
@@ -1219,7 +1232,25 @@ class AssignmentAssessmentApiTests(APITestCase):
 		self.assertEqual(summary.status_code, status.HTTP_200_OK)
 		self.assertEqual(summary.data['visits_this_week'], 2)
 		self.assertGreaterEqual(summary.data['active_seconds_this_week'], 60)
+		self.assertEqual(summary.data['logins_this_week'], 0)
+		self.assertEqual(len(summary.data['daily_logins']), 7)
 		self.assertEqual(summary.data['courses'][0]['grades'][0]['score'], 10)
+
+	def test_profile_summary_counts_successful_logins_for_the_current_week(self):
+		now = timezone.now()
+		with patch('lms_core.views.timezone.now', return_value=now):
+			LoginEvent.objects.create(user=self.learner, logged_in_at=now)
+			LoginEvent.objects.create(user=self.learner, logged_in_at=now)
+
+		self.client.force_authenticate(self.learner)
+		with patch('lms_core.views.timezone.now', return_value=now):
+			summary = self.client.get(reverse('profile_summary'))
+		self.assertEqual(summary.status_code, status.HTTP_200_OK)
+		self.assertEqual(summary.data['logins_this_week'], 2)
+		today = now.date().isoformat()
+		today_summary = next(item for item in summary.data['daily_logins'] if item['date'] == today)
+		self.assertEqual(today_summary['logins'], 2)
+		self.assertEqual(summary.data['latest_login'], now)
 
 	def test_editing_quiz_recalculates_existing_submission_score(self):
 		assignment = Assignment.objects.create(
