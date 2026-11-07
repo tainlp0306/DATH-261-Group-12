@@ -943,6 +943,7 @@ class AssignmentAssessmentApiTests(APITestCase):
 				'title': 'Chapter quiz',
 				'assignment_type': 'quiz',
 				'time_limit_minutes': 5,
+				'max_attempts': 2,
 				'questions': [{
 					'content': 'Choose the correct option',
 					'option_a': 'A', 'option_b': 'B', 'option_c': 'C', 'option_d': 'D',
@@ -952,6 +953,7 @@ class AssignmentAssessmentApiTests(APITestCase):
 			format='json',
 		)
 		self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+		self.assertEqual(response.data['max_attempts'], 2)
 		self.assertEqual(response.data['questions'][0]['correct_option'], 'B')
 		assignment = Assignment.objects.get(pk=response.data['id'])
 		question = Question.objects.get(assignment=assignment)
@@ -1011,6 +1013,81 @@ class AssignmentAssessmentApiTests(APITestCase):
 			self.client.get(reverse('assignment_grading', args=[assignment.pk])).status_code,
 			status.HTTP_403_FORBIDDEN,
 		)
+
+	def test_attempt_answers_are_saved_across_resume_and_attempt_limit_is_enforced(self):
+		assignment = Assignment.objects.create(
+			course=self.course,
+			title='Limited quiz',
+			assignment_type='quiz',
+			max_attempts=1,
+		)
+		question = Question.objects.create(
+			assignment=assignment,
+			content='Choose the correct option',
+			option_a='A', option_b='B', option_c='C', option_d='D',
+			correct_option='C',
+		)
+		Enrollment.objects.create(student=self.learner, course=self.course)
+		self.client.force_authenticate(self.learner)
+
+		started = self.client.post(reverse('assignment_attempt_start', args=[assignment.pk]), format='json')
+		self.assertEqual(started.status_code, status.HTTP_201_CREATED)
+		saved = self.client.patch(
+			reverse('assignment_attempt_answers', args=[assignment.pk, started.data['id']]),
+			{'answers': {str(question.pk): 'C'}},
+			format='json',
+		)
+		self.assertEqual(saved.status_code, status.HTTP_200_OK)
+
+		resumed = self.client.post(reverse('assignment_attempt_start', args=[assignment.pk]), format='json')
+		self.assertEqual(resumed.status_code, status.HTTP_201_CREATED)
+		self.assertEqual(resumed.data['id'], started.data['id'])
+		self.assertEqual(resumed.data['answers'], {str(question.pk): 'C'})
+
+		submitted = self.client.post(
+			reverse('submit_assignment', args=[assignment.pk]),
+			{'submission_id': resumed.data['id'], 'answers': {}},
+			format='json',
+		)
+		self.assertEqual(submitted.status_code, status.HTTP_200_OK)
+		self.assertEqual(submitted.data['score'], 10)
+		self.assertEqual(
+			self.client.post(reverse('assignment_attempt_start', args=[assignment.pk]), format='json').status_code,
+			status.HTTP_400_BAD_REQUEST,
+		)
+		self.assertEqual(
+			self.client.post(
+				reverse('submit_assignment', args=[assignment.pk]),
+				{'answers': {str(question.pk): 'C'}},
+				format='json',
+			).status_code,
+			status.HTTP_400_BAD_REQUEST,
+		)
+
+	def test_instructor_can_clear_optional_attempt_limit(self):
+		assignment = Assignment.objects.create(
+			course=self.course,
+			title='Optional limit quiz',
+			assignment_type='quiz',
+			max_attempts=3,
+		)
+		Question.objects.create(
+			assignment=assignment,
+			content='Question',
+			option_a='A', option_b='B', option_c='C', option_d='D',
+			correct_option='A',
+		)
+		self.client.force_authenticate(self.instructor)
+		response = self.client.patch(
+			reverse('assignment_detail', args=[assignment.pk]),
+			{'max_attempts': ''},
+			format='multipart',
+		)
+
+		self.assertEqual(response.status_code, status.HTTP_200_OK)
+		self.assertIsNone(response.data['max_attempts'])
+		assignment.refresh_from_db()
+		self.assertIsNone(assignment.max_attempts)
 
 	def test_review_policy_hides_results_until_manual_release_and_filters_content(self):
 		assignment = Assignment.objects.create(

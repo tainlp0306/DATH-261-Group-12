@@ -36,6 +36,7 @@ const InstructorAssignments = ({ courseId, modules = [] }) => {
   const [moduleId, setModuleId] = useState('');
   const [assignmentType, setAssignmentType] = useState('quiz');
   const [timeLimit, setTimeLimit] = useState(15);
+  const [maxAttempts, setMaxAttempts] = useState('');
   const [reviewMode, setReviewMode] = useState('after_submission');
   const [reviewReleased, setReviewReleased] = useState(false);
   const [reviewShowScore, setReviewShowScore] = useState(true);
@@ -80,6 +81,7 @@ const InstructorAssignments = ({ courseId, modules = [] }) => {
     setPromptFile(null);
     setNotifyStudents(true);
     setTimeLimit(15);
+    setMaxAttempts('');
     setReviewMode('after_submission');
     setReviewReleased(false);
     setReviewShowScore(true);
@@ -99,6 +101,7 @@ const InstructorAssignments = ({ courseId, modules = [] }) => {
       setModuleId(detail.module ? String(detail.module) : '');
       setAssignmentType(detail.assignment_type);
       setTimeLimit(detail.time_limit_minutes || 15);
+      setMaxAttempts(detail.max_attempts == null ? '' : String(detail.max_attempts));
       setReviewMode(detail.review_mode || 'after_submission');
       setReviewReleased(Boolean(detail.review_released));
       setReviewShowScore(detail.review_show_score !== false);
@@ -162,6 +165,7 @@ const InstructorAssignments = ({ courseId, modules = [] }) => {
         }) : [],
         ...(assignmentType === 'quiz' ? {
           time_limit_minutes: Number(timeLimit),
+          max_attempts: maxAttempts === '' ? null : Number(maxAttempts),
         } : {}),
       };
       const saved = editingAssignment
@@ -235,9 +239,14 @@ const InstructorAssignments = ({ courseId, modules = [] }) => {
           <label className="text-xs font-semibold text-slate-700 md:col-span-2">Mô tả
             <textarea value={description} onChange={(event) => setDescription(event.target.value)} rows={2} placeholder="Hướng dẫn làm bài hoặc yêu cầu nộp bài" className="mt-1 block w-full border border-slate-300 bg-white px-3 py-2 text-sm" />
           </label>
-          {assignmentType === 'quiz' && <label className="text-xs font-semibold text-slate-700">Thời gian làm bài (phút)
-            <input type="number" required min="1" max="600" value={timeLimit} onChange={(event) => setTimeLimit(event.target.value)} className="mt-1 block w-full border border-slate-300 bg-white px-3 py-2 text-sm" />
-          </label>}
+          {assignmentType === 'quiz' && <>
+            <label className="text-xs font-semibold text-slate-700">Thời gian làm bài (phút)
+              <input type="number" required min="1" max="600" value={timeLimit} onChange={(event) => setTimeLimit(event.target.value)} className="mt-1 block w-full border border-slate-300 bg-white px-3 py-2 text-sm" />
+            </label>
+            <label className="text-xs font-semibold text-slate-700">Giới hạn số lượt làm (để trống nếu không giới hạn)
+              <input type="number" min="1" step="1" value={maxAttempts} onChange={(event) => setMaxAttempts(event.target.value)} className="mt-1 block w-full border border-slate-300 bg-white px-3 py-2 text-sm" />
+            </label>
+          </>}
         </div>
         {assignmentType === 'quiz' && (
           <fieldset className="space-y-3 border border-slate-200 bg-slate-50 p-4">

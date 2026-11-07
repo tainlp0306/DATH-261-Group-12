@@ -68,8 +68,8 @@ def notify_course_learners(course, *, title, message, target_url, available_at=N
 
 
 def parse_assignment_payload(data):
-    if 'questions' in data and isinstance(data['questions'], str):
-        mutable = {key: data.get(key) for key in data.keys()}
+    mutable = {key: data.get(key) for key in data.keys()}
+    if 'questions' in mutable and isinstance(mutable['questions'], str):
         try:
             mutable['questions'] = json.loads(mutable['questions'])
         except json.JSONDecodeError:
@@ -77,11 +77,10 @@ def parse_assignment_payload(data):
                 {'questions': ['Định dạng danh sách câu hỏi không hợp lệ.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        for field in ('module', 'publish_at', 'deadline'):
-            if mutable.get(field) == '':
-                mutable[field] = None
-        return mutable, None
-    return data, None
+    for field in ('module', 'publish_at', 'deadline', 'max_attempts'):
+        if mutable.get(field) == '':
+            mutable[field] = None
+    return mutable, None
 
 
 def parse_lesson_payload(data):
@@ -1662,6 +1661,14 @@ class AssignmentAttemptStartView(APIView):
             attempt.save(update_fields=['status', 'submitted_at'])
             attempt = None
         if attempt is None:
+            attempt_count = Submission.objects.filter(
+                assignment=assignment, student=request.user,
+            ).count()
+            if assignment.max_attempts is not None and attempt_count >= assignment.max_attempts:
+                return Response(
+                    {'error': 'Bạn đã sử dụng hết số lượt làm bài được cho phép.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             attempt_number = Submission.objects.filter(
                 assignment=assignment, student=request.user,
             ).count() + 1
@@ -1677,7 +1684,61 @@ class AssignmentAttemptStartView(APIView):
             'attempt_number': attempt.attempt_number,
             'started_at': attempt.started_at,
             'time_limit_minutes': assignment.time_limit_minutes or 15,
+            'answers': attempt.answers or {},
         }, status=status.HTTP_201_CREATED)
+
+
+class AssignmentAttemptAnswersView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def patch(self, request, assignment_id, submission_id):
+        assignment = get_object_or_404(Assignment, pk=assignment_id)
+        if assignment.assignment_type != 'quiz':
+            return Response({'error': 'Chỉ bài trắc nghiệm có đáp án nháp.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not assignment.is_published or (assignment.publish_at and assignment.publish_at > timezone.now()):
+            return Response({'error': 'Bài tập chưa được mở.'}, status=status.HTTP_403_FORBIDDEN)
+        if request.user.role != 'learner' or not Enrollment.objects.filter(
+            student=request.user, course=assignment.course,
+        ).exists():
+            return Response({'error': 'Bạn không có quyền cập nhật lượt làm này.'}, status=status.HTTP_403_FORBIDDEN)
+        submission = get_object_or_404(
+            Submission.objects.select_for_update(),
+            pk=submission_id,
+            assignment=assignment,
+            student=request.user,
+            status=Submission.IN_PROGRESS,
+        )
+        now = timezone.now()
+        time_limit = (assignment.time_limit_minutes or 15) * 60
+        if now > submission.started_at + timedelta(seconds=time_limit + 60):
+            submission.status = Submission.EXPIRED
+            submission.submitted_at = submission.started_at + timedelta(seconds=time_limit)
+            submission.save(update_fields=['status', 'submitted_at'])
+            return Response({'error': 'Thời gian làm bài đã hết.'}, status=status.HTTP_400_BAD_REQUEST)
+        if assignment.deadline and now > assignment.deadline:
+            return Response({'error': 'Đã quá hạn nộp bài.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        answers = request.data.get('answers')
+        if not isinstance(answers, dict):
+            return Response({'answers': ['Câu trả lời phải là một object.']}, status=status.HTTP_400_BAD_REQUEST)
+        question_ids = set(assignment.questions.values_list('id', flat=True))
+        saved_answers = dict(submission.answers or {})
+        for question_id, answer in answers.items():
+            try:
+                normalized_question_id = int(question_id)
+            except (TypeError, ValueError):
+                return Response({'answers': ['Mã câu hỏi không hợp lệ.']}, status=status.HTTP_400_BAD_REQUEST)
+            normalized_answer = str(answer).upper()
+            if normalized_question_id not in question_ids or normalized_answer not in ('A', 'B', 'C', 'D'):
+                return Response(
+                    {'answers': ['Chỉ được lưu đáp án A, B, C hoặc D cho câu hỏi của bài này.']},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            saved_answers[str(normalized_question_id)] = normalized_answer
+        submission.answers = saved_answers
+        submission.save(update_fields=['answers'])
+        return Response({'id': submission.id, 'answers': submission.answers})
 
 
 class AssignmentReviewView(APIView):
@@ -1765,15 +1826,22 @@ class SubmitAssignmentView(APIView):
                     status='in_progress',
                 ).order_by('-attempt_number').first()
                 if submission is None:
+                    attempt_count = Submission.objects.filter(
+                        assignment=assignment, student=request.user,
+                    ).count()
+                    if assignment.max_attempts is not None and attempt_count >= assignment.max_attempts:
+                        return Response(
+                            {'error': 'Bạn đã sử dụng hết số lượt làm bài được cho phép.'},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
                     submission = Submission.objects.create(
                         assignment=assignment,
                         student=request.user,
-                        attempt_number=Submission.objects.filter(
-                            assignment=assignment, student=request.user,
-                        ).count() + 1,
+                        attempt_number=attempt_count + 1,
                         started_at=now,
                         status='in_progress',
                     )
+            answers = {**(submission.answers or {}), **answers}
             time_limit = (assignment.time_limit_minutes or 15) * 60
             elapsed = max(0, int((now - submission.started_at).total_seconds()))
             if elapsed > time_limit + 60:

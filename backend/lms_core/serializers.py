@@ -313,7 +313,7 @@ class AssignmentSerializer(serializers.ModelSerializer):
         model = Assignment
         fields = [
             'id', 'course', 'module', 'title', 'description', 'prompt_file',
-            'assignment_type', 'time_limit_minutes', 'deadline', 'is_published',
+            'assignment_type', 'time_limit_minutes', 'max_attempts', 'deadline', 'is_published',
             'publish_at', 'review_mode', 'review_released', 'review_show_score',
             'review_show_submitted_answers', 'review_show_correct_answers',
             'review_show_explanations', 'questions', 'created_at',
@@ -323,6 +323,13 @@ class AssignmentSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         attrs = super().validate(attrs)
         assignment_type = attrs.get('assignment_type', getattr(self.instance, 'assignment_type', 'quiz'))
+        max_attempts = attrs.get('max_attempts', getattr(self.instance, 'max_attempts', None))
+        if assignment_type == 'quiz' and max_attempts is not None and max_attempts < 1:
+            raise serializers.ValidationError({
+                'max_attempts': ['Giới hạn lượt làm phải từ 1 trở lên hoặc để trống.'],
+            })
+        if assignment_type == 'file':
+            attrs['max_attempts'] = None
         questions = attrs.get('questions')
         question_count = len(questions) if questions is not None else (
             self.instance.questions.count() if self.instance else 0

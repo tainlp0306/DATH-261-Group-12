@@ -19,9 +19,13 @@ const AssignmentPage = () => {
   const [course, setCourse] = useState(null);
   const [assignment, setAssignment] = useState(null);
   const [submission, setSubmission] = useState(null);
+  const [attempts, setAttempts] = useState([]);
+  const [quizResult, setQuizResult] = useState(null);
   const [attemptId, setAttemptId] = useState(null);
   const [attemptStartedAt, setAttemptStartedAt] = useState(null);
   const [answers, setAnswers] = useState({});
+  const answersRef = useRef({});
+  const answerSaveQueue = useRef(Promise.resolve(true));
   const [file, setFile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -46,32 +50,14 @@ const AssignmentPage = () => {
         if (Number(assignmentData.course) !== Number(courseId)) throw new Error('Bài tập không thuộc khóa học này.');
         const submissions = isAuthenticated ? await courseApi.getAssignmentSubmissions(assignmentId) : [];
         const submissionList = Array.isArray(submissions) ? submissions : submissions?.results || [];
-        let activeAttempt = null;
-        const hasActiveAttempt = submissionList.some((item) => item.status === 'in_progress');
-        const hasSubmittedAttempt = submissionList.some((item) => item.status === 'submitted');
-        if (
-          assignmentData.assignment_type === 'quiz'
-          && isAuthenticated
-          && isLearner
-          && (!hasSubmittedAttempt || hasActiveAttempt)
-        ) {
-          activeAttempt = await courseApi.startAssignmentAttempt(assignmentId);
-        }
         if (!active) return;
         setCourse(courseData);
         setAssignment(assignmentData);
-        setSubmission(
-          !hasActiveAttempt
-            ? submissionList.find((item) => item.status === 'submitted') || null
-            : null,
-        );
+        setAttempts(submissionList);
+        setSubmission(assignmentData.assignment_type === 'file'
+          ? submissionList.find((item) => item.status === 'submitted') || null
+          : null);
         setNow(Date.now());
-        if (activeAttempt) {
-          setAttemptId(activeAttempt.id);
-          setAttemptStartedAt(activeAttempt.started_at);
-          setQuizEndTime(new Date(activeAttempt.started_at).getTime() + (activeAttempt.time_limit_minutes || 15) * 60 * 1000);
-          autoSubmitted.current = false;
-        }
       } catch (error) {
         if (!active) return;
         console.error('Failed to load assignment:', error);
@@ -85,7 +71,7 @@ const AssignmentPage = () => {
   }, [courseId, assignmentId, isAuthenticated, isLearner]);
 
   const expired = Boolean(assignment?.deadline && new Date(assignment.deadline).getTime() < now);
-  const quizSeconds = assignment?.assignment_type === 'quiz'
+  const quizSeconds = assignment?.assignment_type === 'quiz' && attemptId
     ? Math.max(0, Math.ceil((quizEndTime - now) / 1000))
     : null;
   const remaining = assignment?.deadline
@@ -95,11 +81,20 @@ const AssignmentPage = () => {
   const submitQuizAnswers = async () => {
     setSubmitting(true);
     try {
+      await answerSaveQueue.current;
       const result = await courseApi.submitAssignment(assignment.id, {
-        answers,
+        answers: answersRef.current,
         submission_id: attemptId,
       });
-      setSubmission({ ...result, status: 'submitted', started_at: attemptStartedAt });
+      setQuizResult({ ...result, status: 'submitted', started_at: attemptStartedAt });
+      setAttemptId(null);
+      try {
+        const history = await courseApi.getAssignmentSubmissions(assignment.id);
+        setAttempts(Array.isArray(history) ? history : history?.results || []);
+      } catch (error) {
+        console.error('Failed to refresh quiz history:', error);
+        toast.error('Đã nộp bài nhưng không tải được lịch sử mới nhất.');
+      }
       toast.success(result.score == null ? 'Đã nộp bài.' : `Đã nộp bài. Điểm: ${result.score} / 10`);
     } catch (error) {
       console.error('Failed to submit quiz:', error);
@@ -115,12 +110,41 @@ const AssignmentPage = () => {
       setAttemptId(attempt.id);
       setAttemptStartedAt(attempt.started_at);
       setQuizEndTime(new Date(attempt.started_at).getTime() + (attempt.time_limit_minutes || 15) * 60 * 1000);
-      setAnswers({});
-      setSubmission(null);
+      const savedAnswers = attempt.answers || {};
+      answersRef.current = savedAnswers;
+      setAnswers(savedAnswers);
+      answerSaveQueue.current = Promise.resolve(true);
+      setQuizResult(null);
       autoSubmitted.current = false;
+      try {
+        const history = await courseApi.getAssignmentSubmissions(assignment.id);
+        setAttempts(Array.isArray(history) ? history : history?.results || []);
+      } catch (error) {
+        console.error('Failed to refresh quiz history:', error);
+        toast.error('Không tải được lịch sử mới nhất; lượt làm vẫn đang mở.');
+      }
     } catch (error) {
       toast.error(error.response?.data?.error || 'Không thể bắt đầu lượt làm mới.');
+      try {
+        const history = await courseApi.getAssignmentSubmissions(assignment.id);
+        setAttempts(Array.isArray(history) ? history : history?.results || []);
+      } catch (refreshError) {
+        console.error('Failed to refresh quiz history after start error:', refreshError);
+      }
     }
+  };
+
+  const updateQuizAnswer = (questionId, option) => {
+    const nextAnswers = { ...answersRef.current, [String(questionId)]: option };
+    answersRef.current = nextAnswers;
+    setAnswers(nextAnswers);
+    answerSaveQueue.current = answerSaveQueue.current.then(() => (
+      courseApi.saveAssignmentAttemptAnswers(assignment.id, attemptId, nextAnswers)
+    )).then(() => true).catch((error) => {
+      console.error('Failed to save quiz answers:', error);
+      toast.error(error.response?.data?.error || 'Không lưu được đáp án. Hãy kiểm tra kết nối.');
+      return false;
+    });
   };
 
   const submitOnQuizTimeout = useEffectEvent(() => {
@@ -131,8 +155,8 @@ const AssignmentPage = () => {
   });
 
   useEffect(() => {
-    if (quizSeconds === 0) submitOnQuizTimeout();
-  }, [quizSeconds]);
+    if (attemptId && quizSeconds === 0) submitOnQuizTimeout();
+  }, [attemptId, quizSeconds]);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -187,6 +211,18 @@ const AssignmentPage = () => {
     setFile(selected);
   };
 
+  const scoredAttempts = attempts.filter((attempt) => typeof attempt.score === 'number');
+  const averageScore = scoredAttempts.length
+    ? scoredAttempts.reduce((total, attempt) => total + attempt.score, 0) / scoredAttempts.length
+    : null;
+  const highestScore = scoredAttempts.length
+    ? Math.max(...scoredAttempts.map((attempt) => attempt.score))
+    : null;
+  const activeHistoryAttempt = attempts.find((attempt) => attempt.status === 'in_progress');
+  const hasAttemptCapacity = Boolean(activeHistoryAttempt)
+    || assignment?.max_attempts == null
+    || attempts.length < assignment.max_attempts;
+
   if (loading) return <div className="py-20"><LoadingSpinner size="large" text="Đang tải bài tập..." /></div>;
   if (!course || !assignment) return <main className="mx-auto max-w-3xl px-4 py-16 text-center"><p className="text-slate-700">Không thể tìm thấy bài tập này.</p><Link to={`/courses/${courseId}`} className="mt-4 inline-flex items-center gap-2 text-sm font-semibold text-emerald-800"><ArrowLeft className="h-4 w-4" /> Quay lại đề cương</Link></main>;
 
@@ -199,7 +235,7 @@ const AssignmentPage = () => {
         {assignment.description && <p className="mt-3 whitespace-pre-line text-sm leading-6 text-slate-600">{assignment.description}</p>}
         <div className="mt-3 flex flex-wrap gap-4 text-xs text-slate-500">
           {assignment.deadline && <span className={`inline-flex items-center gap-1.5 ${expired ? 'font-semibold text-rose-700' : ''}`}><Clock3 className="h-4 w-4" /> {expired ? 'Đã quá hạn:' : 'Hạn nộp:'} {new Date(assignment.deadline).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}</span>}
-          {assignment.assignment_type === 'quiz' && <span>Thời gian: {Math.floor((quizSeconds || 0) / 60)}:{String((quizSeconds || 0) % 60).padStart(2, '0')}</span>}
+          {assignment.assignment_type === 'quiz' && attemptId && <span>Thời gian còn lại: {Math.floor((quizSeconds || 0) / 60)}:{String((quizSeconds || 0) % 60).padStart(2, '0')}</span>}
         </div>
       </header>
 
@@ -215,20 +251,70 @@ const AssignmentPage = () => {
 
       {!isAuthenticated || !isLearner ? (
         <p className="mt-6 border-l-2 border-amber-500 pl-3 text-sm text-amber-900">Đăng nhập bằng tài khoản học viên đã đăng ký khóa học để làm và nộp bài.</p>
-      ) : assignment.assignment_type === 'quiz' && submission?.status === 'submitted' ? (
+      ) : assignment.assignment_type === 'quiz' && quizResult ? (
         <section className="mt-6 space-y-4 border border-emerald-200 bg-emerald-50 p-5">
           <h2 className="font-semibold text-emerald-950">Lượt làm đã được nộp</h2>
-          {submission.score != null
-            ? <p className="text-sm text-emerald-900">Điểm: {submission.score} / 10</p>
+          {quizResult.score != null
+            ? <p className="text-sm text-emerald-900">Điểm: {quizResult.score} / 10</p>
             : <p className="text-sm text-emerald-900">Kết quả sẽ xuất hiện theo cài đặt của giảng viên.</p>}
           <div className="flex flex-wrap gap-3">
-            {submission.review_available && (
-              <Link to={`/courses/${courseId}/assignments/${assignmentId}/submissions/${submission.id}/review`} className="text-sm font-semibold text-emerald-900 underline">
+            {quizResult.review_available && (
+              <Link to={`/courses/${courseId}/assignments/${assignmentId}/submissions/${quizResult.id}/review`} className="text-sm font-semibold text-emerald-900 underline">
                 Xem lại bài làm
               </Link>
             )}
-            <button type="button" onClick={startNextAttempt} className="text-sm font-semibold text-emerald-900 underline">Làm lượt mới</button>
+            <button type="button" onClick={() => setQuizResult(null)} className="text-sm font-semibold text-emerald-900 underline">Xem lịch sử các lượt</button>
           </div>
+        </section>
+      ) : assignment.assignment_type === 'quiz' && !attemptId ? (
+        <section className="mt-6 space-y-5 border border-slate-200 bg-white p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <h2 className="font-semibold text-slate-950">Lịch sử làm bài</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                {assignment.max_attempts == null
+                  ? `Đã làm ${attempts.length} lượt · Không giới hạn số lượt`
+                  : `Đã dùng ${attempts.length} / ${assignment.max_attempts} lượt`}
+              </p>
+            </div>
+            {scoredAttempts.length > 0 && (
+              <div className="flex flex-wrap gap-4 text-sm">
+                <span className="text-slate-600">Điểm trung bình: <strong className="text-slate-900">{averageScore.toFixed(2)} / 10</strong></span>
+                <span className="text-slate-600">Cao nhất: <strong className="text-emerald-800">{highestScore.toFixed(2)} / 10</strong></span>
+              </div>
+            )}
+          </div>
+          {attempts.length === 0 ? (
+            <p className="border-t border-slate-100 pt-4 text-sm text-slate-500">Bạn chưa làm bài kiểm tra này.</p>
+          ) : (
+            <ol className="divide-y divide-slate-100 border-y border-slate-100">
+              {attempts.map((attempt) => (
+                <li key={attempt.id} className="flex flex-wrap items-center justify-between gap-3 py-3 text-sm">
+                  <div>
+                    <p className="font-semibold text-slate-800">Lượt {attempt.attempt_number}</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {attempt.status === 'in_progress' ? 'Đang làm dở'
+                        : attempt.status === 'expired' ? 'Hết giờ'
+                          : `Đã nộp ${attempt.submitted_at ? new Date(attempt.submitted_at).toLocaleString('vi-VN') : ''}`}
+                      {attempt.status === 'in_progress' && attempt.started_at && ` · Bắt đầu ${new Date(attempt.started_at).toLocaleString('vi-VN')}`}
+                      {attempt.duration_seconds != null && ` · ${Math.floor(attempt.duration_seconds / 60)} phút ${attempt.duration_seconds % 60} giây`}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="font-semibold text-slate-800">{attempt.score == null ? 'Chưa có điểm' : `${attempt.score} / 10`}</span>
+                    {attempt.review_available && (
+                      <Link to={`/courses/${courseId}/assignments/${assignmentId}/submissions/${attempt.id}/review`} className="text-xs font-semibold text-indigo-700 underline">Xem lại</Link>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ol>
+          )}
+          <button type="button" onClick={startNextAttempt} disabled={expired || !hasAttemptCapacity} className="inline-flex items-center gap-2 bg-emerald-800 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-900 disabled:cursor-not-allowed disabled:opacity-50">
+            {activeHistoryAttempt ? 'Tiếp tục lượt đang làm' : attempts.length ? 'Làm lại bài' : 'Bắt đầu làm bài'}
+          </button>
+          {!hasAttemptCapacity && !activeHistoryAttempt && <p className="text-xs font-medium text-rose-700">Bạn đã sử dụng hết số lượt được phép.</p>}
+          {expired && <p className="text-xs font-medium text-rose-700">Bài kiểm tra đã quá hạn.</p>}
         </section>
       ) : (
         <form onSubmit={submit} className="mt-6 space-y-6">
@@ -245,7 +331,7 @@ const AssignmentPage = () => {
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
                     {['A', 'B', 'C', 'D'].map((option) => (
                       <label key={option} className={`flex cursor-pointer items-start gap-2 border px-3 py-3 text-sm ${answers[String(question.id)] === option ? 'border-emerald-800 bg-emerald-50' : 'border-slate-200 hover:bg-slate-50'}`}>
-                        <input type="radio" name={`question-${question.id}`} value={option} checked={answers[String(question.id)] === option} onChange={() => setAnswers((current) => ({ ...current, [String(question.id)]: option }))} />
+                        <input type="radio" name={`question-${question.id}`} value={option} checked={answers[String(question.id)] === option} onChange={() => updateQuizAnswer(question.id, option)} />
                         <span><strong>{option}.</strong> {question[`option_${option.toLowerCase()}`]}</span>
                       </label>
                     ))}

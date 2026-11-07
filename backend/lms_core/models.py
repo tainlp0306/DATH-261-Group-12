@@ -191,6 +191,7 @@ class Assignment(models.Model):
     is_published = models.BooleanField(default=True)
     publish_at = models.DateTimeField(blank=True, null=True)
     time_limit_minutes = models.IntegerField(blank=True, null=True) # Dành cho quiz
+    max_attempts = models.PositiveIntegerField(blank=True, null=True)
     deadline = models.DateTimeField(blank=True, null=True) # Hạn chót nộp bài
     review_mode = models.CharField(max_length=24, choices=REVIEW_MODES, default='after_submission')
     review_released = models.BooleanField(default=False)

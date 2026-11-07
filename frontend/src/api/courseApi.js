@@ -140,6 +140,14 @@ export const courseApi = {
     return response.data;
   },
 
+  saveAssignmentAttemptAnswers: async (assignmentId, submissionId, answers) => {
+    const response = await api.patch(
+      `assignments/${assignmentId}/attempts/${submissionId}/`,
+      { answers },
+    );
+    return response.data;
+  },
+
   getAssignmentReview: async (assignmentId, submissionId) => {
     const response = await api.get(`assignments/${assignmentId}/submissions/${submissionId}/review/`);
     return response.data;

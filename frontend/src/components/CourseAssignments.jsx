@@ -4,7 +4,6 @@ import toast from 'react-hot-toast';
 import { Award, ClipboardList, Clock3, FileDown, FileUp, History } from 'lucide-react';
 import { courseApi } from '../api/courseApi';
 import { useAuth } from '../context/AuthContext';
-import QuizModal from './QuizModal';
 
 const mediaUrl = (path) => path?.startsWith('http')
   ? path
@@ -18,8 +17,6 @@ const CourseAssignments = ({ courseId, isEnrolled }) => {
   const [uploadingId, setUploadingId] = useState(null);
   const [selectedFiles, setSelectedFiles] = useState({});
   const [activeTab, setActiveTab] = useState('assignments');
-  const [activeQuiz, setActiveQuiz] = useState(null);
-  const [startingQuizId, setStartingQuizId] = useState(null);
   const [currentTime, setCurrentTime] = useState(() => Date.now());
 
   useEffect(() => {
@@ -80,42 +77,6 @@ const CourseAssignments = ({ courseId, isEnrolled }) => {
     }
   };
 
-  const refreshAssignmentSubmission = async (assignmentId) => {
-    try {
-      const response = await courseApi.getAssignmentSubmissions(assignmentId);
-      const list = Array.isArray(response) ? response : response?.results || [];
-      setSubmissions((current) => ({ ...current, [assignmentId]: list }));
-    } catch {
-      toast.error('Đã nộp bài nhưng không tải được lịch sử mới nhất.');
-    }
-  };
-
-  const startQuiz = async (assignment) => {
-    setStartingQuizId(assignment.id);
-    try {
-      const attempt = await courseApi.startAssignmentAttempt(assignment.id);
-      setActiveQuiz({
-        ...assignment,
-        attemptId: attempt.id,
-        startedAt: attempt.started_at,
-      });
-    } catch (error) {
-      toast.error(error.response?.data?.error || 'Không thể bắt đầu bài kiểm tra.');
-    } finally {
-      setStartingQuizId(null);
-    }
-  };
-
-  const retryQuiz = async () => {
-    const attempt = await courseApi.startAssignmentAttempt(activeQuiz.id);
-    setActiveQuiz((current) => current && ({
-      ...current,
-      attemptId: attempt.id,
-      startedAt: attempt.started_at,
-    }));
-    return attempt;
-  };
-
   if (!isAuthenticated || !isEnrolled) return null;
 
   return (
@@ -153,9 +114,9 @@ const CourseAssignments = ({ courseId, isEnrolled }) => {
                   </p>
                 </div>
                 {isLearner && assignment.assignment_type === 'quiz' ? (
-                  <button type="button" disabled={expired || startingQuizId === assignment.id} onClick={() => startQuiz(assignment)} className="inline-flex shrink-0 items-center justify-center gap-2 border border-emerald-800 px-3 py-2 text-xs font-semibold text-emerald-900 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50">
-                    <Clock3 className="h-4 w-4" /> {expired ? 'Đã quá hạn' : startingQuizId === assignment.id ? 'Đang mở...' : 'Làm bài'}
-                  </button>
+                  <Link to={`/courses/${courseId}/assignments/${assignment.id}`} className="inline-flex shrink-0 items-center justify-center gap-2 border border-emerald-800 px-3 py-2 text-xs font-semibold text-emerald-900 hover:bg-emerald-50">
+                    <Clock3 className="h-4 w-4" /> Lịch sử & làm bài
+                  </Link>
                 ) : isLearner && (
                   <div className="flex shrink-0 flex-col items-start gap-2 sm:items-end">
                     <label className={`inline-flex items-center justify-center gap-2 border px-3 py-2 text-xs font-semibold ${expired ? 'cursor-not-allowed border-slate-300 text-slate-400' : 'cursor-pointer border-slate-300 text-slate-700 hover:bg-slate-50'}`}>
@@ -180,6 +141,13 @@ const CourseAssignments = ({ courseId, isEnrolled }) => {
         <ul className="mt-3 divide-y divide-slate-200">
           {assignments.map((assignment) => {
             const attempts = submissions[assignment.id] || [];
+            const scoredAttempts = attempts.filter((attempt) => typeof attempt.score === 'number');
+            const averageScore = scoredAttempts.length
+              ? scoredAttempts.reduce((total, attempt) => total + attempt.score, 0) / scoredAttempts.length
+              : null;
+            const highestScore = scoredAttempts.length
+              ? Math.max(...scoredAttempts.map((attempt) => attempt.score))
+              : null;
             return (
               <li key={assignment.id} className="grid gap-2 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
                 <div>
@@ -202,24 +170,12 @@ const CourseAssignments = ({ courseId, isEnrolled }) => {
                     </ol>
                   )}
                 </div>
-                {attempts.some((attempt) => attempt.score != null) && <div className="inline-flex items-center gap-2 text-sm font-semibold text-slate-800"><Award className="h-4 w-4 text-emerald-800" /> Điểm mới nhất: {attempts.find((attempt) => attempt.score != null)?.score} / 10</div>}
+                {scoredAttempts.length > 0 && <div className="flex flex-col gap-1 text-xs font-semibold text-slate-700 sm:text-right"><span className="inline-flex items-center gap-1.5"><Award className="h-4 w-4 text-emerald-800" /> Trung bình: {averageScore.toFixed(2)} / 10</span><span>Điểm cao nhất: {highestScore.toFixed(2)} / 10</span></div>}
               </li>
             );
           })}
         </ul>
       )}
-
-      {activeQuiz && <QuizModal
-        quiz={activeQuiz}
-        submitAnswers={(assignmentId, answers, submissionId) => courseApi.submitAssignment(assignmentId, {
-          answers,
-          submission_id: submissionId,
-        })}
-        onRetry={retryQuiz}
-        reviewUrl={`/courses/${courseId}/assignments/${activeQuiz.id}/submissions/${activeQuiz.attemptId}/review`}
-        onClose={() => setActiveQuiz(null)}
-        onCompleted={() => refreshAssignmentSubmission(activeQuiz.id)}
-      />}
     </section>
   );
 };
