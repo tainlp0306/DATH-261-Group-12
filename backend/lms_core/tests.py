@@ -1841,3 +1841,159 @@ class AdvancedComponentsApiTests(APITestCase):
 			LearningActivityAttempt.objects.get(pk=attempt.data['id']).responses[0]['strokes'][0],
 			[[0.1, 0.1], [0.5, 0.5], [0.9, 0.8]],
 		)
+
+
+class LearnerStudyFlowEndToEndTests(APITestCase):
+	"""One learner journey through the public API: enrol, study, sit a quiz, read the score."""
+
+	password = 'test-password'
+
+	def setUp(self):
+		self.instructor = User.objects.create_user(
+			username='flow-instructor', password=self.password, role='instructor',
+		)
+		self.learner = User.objects.create_user(
+			username='flow-learner', email='flow-learner@example.com',
+			password=self.password, role='learner',
+		)
+
+	def authenticate(self, username):
+		response = self.client.post(
+			reverse('token_obtain_pair'),
+			{'username': username, 'password': self.password},
+			format='json',
+		)
+		self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+		self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {response.data["access"]}')
+
+	def test_learner_enrols_studies_submits_quiz_and_reads_score(self):
+		self.authenticate(self.instructor.username)
+		course = self.client.post(
+			reverse('course_list_create'),
+			{
+				'title': 'End-to-end study course',
+				'description': 'A published course used by the main learner flow.',
+				'is_published': True,
+			},
+			format='json',
+		)
+		self.assertEqual(course.status_code, status.HTTP_201_CREATED, course.data)
+		course_id = course.data['id']
+		module = self.client.post(
+			reverse('module_create'),
+			{'course': course_id, 'title': 'Chapter 1', 'order': 1},
+			format='json',
+		)
+		self.assertEqual(module.status_code, status.HTTP_201_CREATED, module.data)
+		lesson = self.client.post(
+			reverse('lesson_create'),
+			{
+				'module': module.data['id'],
+				'title': 'Greetings',
+				'lesson_type': 'text',
+				'content': 'Hello is used to greet someone.',
+				'order': 1,
+				'notify_students': 'false',
+			},
+			format='json',
+		)
+		self.assertEqual(lesson.status_code, status.HTTP_201_CREATED, lesson.data)
+		quiz = self.client.post(
+			reverse('course_assignments', args=[course_id]),
+			{
+				'title': 'Greetings quiz',
+				'assignment_type': 'quiz',
+				'time_limit_minutes': 10,
+				'questions': [
+					{
+						'content': 'Which word is a greeting?',
+						'option_a': 'Goodbye', 'option_b': 'Hello',
+						'option_c': 'Thanks', 'option_d': 'Please',
+						'correct_option': 'B',
+					},
+					{
+						'content': 'Which reply accepts thanks?',
+						'option_a': 'You are welcome', 'option_b': 'Yesterday',
+						'option_c': 'Never', 'option_d': 'Empty',
+						'correct_option': 'A',
+					},
+				],
+			},
+			format='json',
+		)
+		self.assertEqual(quiz.status_code, status.HTTP_201_CREATED, quiz.data)
+		questions = {item['content']: item['id'] for item in quiz.data['questions']}
+		assignment_id = quiz.data['id']
+		lesson_id = lesson.data['id']
+
+		self.authenticate(self.learner.username)
+		catalogue = self.client.get(reverse('course_list_create'), {'search': 'End-to-end study course'})
+		self.assertEqual(catalogue.status_code, status.HTTP_200_OK)
+		self.assertIn(course_id, [item['id'] for item in catalogue.data['results']])
+
+		blocked_progress = self.client.post(
+			reverse('lesson_progress_update', args=[lesson_id]),
+			{'is_completed': True},
+			format='json',
+		)
+		self.assertEqual(blocked_progress.status_code, status.HTTP_403_FORBIDDEN)
+		blocked_quiz = self.client.post(
+			reverse('submit_assignment', args=[assignment_id]),
+			{'answers': {}},
+			format='json',
+		)
+		self.assertEqual(blocked_quiz.status_code, status.HTTP_403_FORBIDDEN)
+
+		enrolled = self.client.post(
+			reverse('enrollment_list_create'),
+			{'course': course_id},
+			format='json',
+		)
+		self.assertEqual(enrolled.status_code, status.HTTP_201_CREATED, enrolled.data)
+		my_courses = self.client.get(reverse('enrollment_list_create'))
+		self.assertEqual(my_courses.data[0]['course'], course_id)
+
+		lesson_detail = self.client.get(reverse('lesson_detail', args=[lesson_id]))
+		self.assertEqual(lesson_detail.status_code, status.HTTP_200_OK)
+		self.assertEqual(lesson_detail.data['content'], 'Hello is used to greet someone.')
+		progress = self.client.post(
+			reverse('lesson_progress_update', args=[lesson_id]),
+			{'last_page': 1, 'is_completed': True},
+			format='json',
+		)
+		self.assertEqual(progress.status_code, status.HTTP_200_OK)
+		self.assertTrue(progress.data['is_completed'])
+		saved_progress = self.client.get(reverse('student_course_progress', args=[course_id]))
+		self.assertEqual(saved_progress.status_code, status.HTTP_200_OK)
+		self.assertTrue(saved_progress.data[0]['is_completed'])
+		self.assertEqual(saved_progress.data[0]['last_page'], 1)
+
+		started = self.client.post(reverse('assignment_attempt_start', args=[assignment_id]), format='json')
+		self.assertEqual(started.status_code, status.HTTP_201_CREATED, started.data)
+		submitted = self.client.post(
+			reverse('submit_assignment', args=[assignment_id]),
+			{
+				'submission_id': started.data['id'],
+				'answers': {
+					str(questions['Which word is a greeting?']): 'B',
+					str(questions['Which reply accepts thanks?']): 'C',
+				},
+			},
+			format='json',
+		)
+		self.assertEqual(submitted.status_code, status.HTTP_200_OK, submitted.data)
+		self.assertEqual(submitted.data['score'], 5)
+		self.assertEqual(submitted.data['correct_count'], 1)
+
+		history = self.client.get(reverse('assignment_submissions', args=[assignment_id]))
+		self.assertEqual(history.status_code, status.HTTP_200_OK)
+		self.assertEqual(history.data[0]['score'], 5)
+		review = self.client.get(reverse(
+			'assignment_submission_review',
+			args=[assignment_id, submitted.data['id']],
+		))
+		self.assertEqual(review.status_code, status.HTTP_200_OK)
+		self.assertEqual(review.data['score'], 5)
+		summary = self.client.get(reverse('profile_summary'))
+		self.assertEqual(summary.status_code, status.HTTP_200_OK)
+		self.assertEqual(summary.data['courses'][0]['grades'][0]['score'], 5)
