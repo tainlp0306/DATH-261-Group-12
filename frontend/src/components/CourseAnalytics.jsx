@@ -5,12 +5,14 @@ import { courseApi } from '../api/courseApi';
 import LoadingSpinner from './LoadingSpinner';
 
 const riskLabels = {
+  critical: 'Cần can thiệp gấp',
   at_risk: 'Cần can thiệp',
   watch: 'Cần theo dõi',
   ok: 'Đúng tiến độ',
 };
 
 const riskStyles = {
+  critical: 'bg-rose-100 text-rose-950 border-rose-300',
   at_risk: 'bg-rose-50 text-rose-800 border-rose-200',
   watch: 'bg-amber-50 text-amber-800 border-amber-200',
   ok: 'bg-emerald-50 text-emerald-800 border-emerald-200',
@@ -75,11 +77,11 @@ export default function CourseAnalytics({ courseId }) {
         </div>
         <div className="rounded-xl border border-rose-200 bg-rose-50 p-4">
           <div className="flex items-center gap-2 text-xs font-semibold text-rose-800"><BellRing className="h-4 w-4" /> Cần can thiệp</div>
-          <p className="mt-2 text-2xl font-bold text-rose-900">{report.risk_counts.at_risk}</p>
+          <p data-testid="kpi-at-risk-count" className="mt-2 text-2xl font-bold text-rose-900">{report.risk_counts?.at_risk ?? 0}</p>
         </div>
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
           <div className="flex items-center gap-2 text-xs font-semibold text-amber-800"><TrendingDown className="h-4 w-4" /> Cần theo dõi</div>
-          <p className="mt-2 text-2xl font-bold text-amber-900">{report.risk_counts.watch}</p>
+          <p className="mt-2 text-2xl font-bold text-amber-900">{report.risk_counts?.watch ?? 0}</p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-4">
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-500"><Activity className="h-4 w-4" /> Hoàn thành trung bình</div>
@@ -87,11 +89,11 @@ export default function CourseAnalytics({ courseId }) {
         </div>
       </div>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5" aria-labelledby="analytics-timeline-title">
+      <section data-testid="progress-chart" className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5" aria-labelledby="analytics-timeline-title">
         <h3 id="analytics-timeline-title" className="font-semibold text-slate-900">Diễn biến học tập theo tuần</h3>
         <p className="mt-1 text-xs text-slate-500">Tỷ lệ hoàn thành trung vị, mốc tham chiếu và điểm quiz trung bình trong tuần.</p>
         <div className="mt-5 grid grid-cols-4 gap-3 sm:grid-cols-8">
-          {report.weekly_progress.map((week) => (
+          {(report.weekly_progress || []).map((week) => (
             <div key={week.week_start} className="flex flex-col items-center gap-2">
               <div className="flex h-32 w-full items-end justify-center gap-1 border-b border-slate-200 bg-slate-50 px-1">
                 <div
@@ -112,6 +114,7 @@ export default function CourseAnalytics({ courseId }) {
                   />
                 )}
               </div>
+              <span className="text-[10px] font-semibold text-slate-700">{percent(week.median_completion)}</span>
               <span className="text-[10px] text-slate-500">{new Date(`${week.week_start}T00:00:00`).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}</span>
             </div>
           ))}
@@ -123,7 +126,7 @@ export default function CourseAnalytics({ courseId }) {
         </div>
       </section>
 
-      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white" aria-labelledby="analytics-students-title">
+      <section data-testid="at-risk-table" className="overflow-hidden rounded-xl border border-slate-200 bg-white" aria-labelledby="analytics-students-title">
         <div className="border-b border-slate-200 px-4 py-4">
           <h3 id="analytics-students-title" className="font-semibold text-slate-900">Học viên và lý do cảnh báo</h3>
           <p className="mt-1 text-xs text-slate-500">Các quy tắc dựa trên tiến độ sau 14 ngày, chuỗi điểm quiz thấp và 7 ngày không hoạt động.</p>
@@ -144,7 +147,7 @@ export default function CourseAnalytics({ courseId }) {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {report.students.map((student) => (
-                  <tr key={student.student_id} data-testid={`analytics-student-${student.student_id}`} className="align-top">
+                  <tr key={student.student_id} data-testid={`analytics-student-${student.student_id}`} data-username={student.username} className="align-top">
                     <td className="px-4 py-4">
                       <p className="font-semibold text-slate-900">{student.full_name}</p>
                       <p className="text-xs text-slate-500">{student.username}</p>
@@ -152,6 +155,9 @@ export default function CourseAnalytics({ courseId }) {
                     <td className="px-4 py-4">
                       <p className="font-medium text-slate-800">{student.completed_lessons}/{student.total_lessons} bài · {percent(student.completion_ratio)}</p>
                       <p className="mt-1 text-xs text-slate-500">Điểm quiz TB: {student.avg_quiz_score == null ? 'Chưa có' : `${student.avg_quiz_score.toFixed(1)}/10`}</p>
+                      {student.retention_score != null && (
+                        <p className="mt-1 text-xs text-slate-500">Độ ghi nhớ: {student.retention_score}/100</p>
+                      )}
                     </td>
                     <td className="px-4 py-4 text-slate-700">
                       {student.days_since_last_active === 0 ? 'Hôm nay' : `${student.days_since_last_active} ngày trước`}
@@ -160,7 +166,7 @@ export default function CourseAnalytics({ courseId }) {
                       <span className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${riskStyles[student.risk_level]}`}>
                         {riskLabels[student.risk_level]}
                       </span>
-                      {student.reasons.length > 0 ? (
+                      {student.reasons?.length > 0 ? (
                         <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-slate-600">
                           {student.reasons.map((reason) => <li key={reason.code}>{reason.text}</li>)}
                         </ul>
@@ -169,7 +175,8 @@ export default function CourseAnalytics({ courseId }) {
                     <td className="px-4 py-4">
                       <button
                         type="button"
-                        disabled={!student.reasons.length || sending === student.student_id}
+                        data-testid={`intervene-notify-${student.username}`}
+                        disabled={!student.reasons?.length || sending === student.student_id}
                         onClick={() => sendReminder(student)}
                         className="rounded-lg border border-indigo-200 px-3 py-2 text-xs font-semibold text-indigo-800 hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-40"
                       >

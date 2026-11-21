@@ -186,7 +186,7 @@ Các mục dưới đây đã được cập nhật trong code. Những thao tá
 
 | Thành phần | Phạm vi đã tích hợp | Trạng thái xác minh / giới hạn |
 |---|---|---|
-| Learning Analytics & Early Warning | Ghi nhận sự kiện học tập theo thời gian; biểu đồ tiến độ và điểm quiz theo tuần; giải thích cảnh báo theo các quy tắc minh bạch; nhắc học viên có chống gửi trùng 24 giờ; lệnh `seed_analytics_demo` tạo cohort mô phỏng 24 học viên. | Có API tests cho quyền truy cập, giải thích rủi ro, lịch sử điểm quiz (gồm quiz ngắn) và nhắc học viên. Cần chạy lại với PostgreSQL/Docker và kiểm tra giao diện thực tế. Biểu đồ dùng lịch sử sự kiện từ khi tính năng được triển khai; dữ liệu cũ chỉ có thể dùng trạng thái tiến độ/kết quả hiện tại làm mốc gần nhất, không phải lịch sử đầy đủ. |
+| Learning Analytics & Early Warning | Tab Phân tích & cảnh báo trên trang quản lý khóa; banner tiến độ trên đề cương của học viên đã ghi danh; biểu đồ 8 tuần; lý do cảnh báo; nhắc trong ứng dụng, chống gửi trùng 24 giờ, mở đúng khóa học. | Luồng màn hình dùng một bộ quy tắc. API đánh giá `overview` / `at-risk` và lệnh `seed_analytics` vẫn dùng bộ điểm riêng. Xem mục giới hạn bên dưới. |
 | Hoạt động luyện tập ngắn tái sử dụng | Instructor tạo/sửa/publish hoạt động trắc nghiệm, gõ từ vựng hoặc luyện viết ký tự; learner đã ghi danh làm bài; có chấm điểm trắc nghiệm/từ vựng và lưu nét viết. `seed_demo_data` tạo ví dụ của cả ba dạng. | Có API tests cho tạo bài, quyền truy cập, chấm điểm và lưu nét viết; chưa xác nhận thủ công trên trình duyệt. Nét viết được lưu nhưng không có nhận dạng/chấm tự động hình dạng chữ. |
 
 ## Ghi nhận lỗi đã xử lý
@@ -194,5 +194,22 @@ Các mục dưới đây đã được cập nhật trong code. Những thao tá
 | Ngày | Vấn đề | Vai trò bị ảnh hưởng | Nguyên nhân | Xử lý |
 |---|---|---|---|---|
 | 2026-10-24 | Course list/detail trả HTTP 500 sau thay đổi outline | Instructor và learner | Migration `0009_assignment_module_submission_answers` chưa áp dụng; outline mới truy vấn `Assignment.module_id` không tồn tại trong DB. Không phát hiện class trùng tên. | Backend log xác nhận cột thiếu; đã áp migration, thêm API list riêng cho instructor và chạy 31 test thành công |
+| 2026-11-19 | Đề cương khóa học vỡ khi học viên đã ghi danh | Learner | `CourseDetailPage` import `LearnerRiskBanner` nhưng component không có trong frontend. | Thêm banner, gọi `GET /me/analytics/`. Banner và tab giảng viên dùng cùng `lms_core.analytics`. |
+| 2026-11-19 | Cảnh báo và huy hiệu không khớp | Instructor | Quy tắc `low_completion` ghi lý do nhưng vẫn để mức `ok` khi lệch tiến độ dưới 25%. | Có lý do thì mức thấp nhất là `watch`. |
+| 2026-11-19 | Hai lớp `LearningEvent` / `Intervention` | Cả hệ thống | Model khai báo hai lần; bản sau ghi đè nên mất `suggest_review` và `practice_attempt`. Migration `0009_learningevent_intervention` tạo lại bảng mà `0011` cũng tạo. | Giữ một model, gộp choices, để `0009` không tạo bảng nữa, `0011` bỏ qua nếu bảng đã có. |
+| 2026-11-19 | Mốc hoàn thành bài học bị kéo theo lần sửa trang | Biểu đồ tiến độ | `updated_at` đổi mỗi lần lưu trang. | Thêm `completed_at`, chỉ gán lúc chuyển sang hoàn thành. |
+
+## Giới hạn còn lại của Learning analytics và cảnh báo sớm
+
+Các màn hình đang dùng (tab giảng viên và banner học viên) đọc `lms_core.analytics`. Nhánh `backend/-prototype` chỉ có `AnalyticsDashboardView`: mọi tài khoản đã đăng nhập đều thấy bài học chưa xong của toàn hệ thống nếu quá 7 ngày. Phần đó không được đưa vào luồng chính vì không giới hạn theo khóa và theo quyền phụ trách.
+
+| Giới hạn | Vì sao chưa đủ reliable | Hướng khắc phục |
+|---|---|---|
+| Hai bộ phân loại cùng tồn tại | Tab và banner dùng quy tắc có câu giải thích (`ok` / `watch` / `at_risk`). `GET /analytics/overview/`, `GET /analytics/at-risk/` và `seed_analytics` dùng `lms_core.services.analytics` (thêm `critical`, điểm rủi ro, độ ghi nhớ từ `PracticeLog`). Cùng một học viên có thể bị hai mức khác nhau. F1 của cohort 24 người chỉ đúng với bộ thứ hai. | Chọn bộ điểm làm nguồn duy nhất. Đưa câu giải thích và biểu đồ quiz của bộ quy tắc sang bộ đó, rồi chạy lại `seed_analytics` để khóa nhãn. Xóa endpoint trùng `practice-intervene` sau khi tab gọi một API. |
+| Ngưỡng cố định | 14 ngày, 40% bài, 3 quiz dưới 5/10, 7 ngày không học, kế hoạch 28 ngày không đổi theo khóa. | Lưu ngưỡng trên khóa học; mặc định giữ số hiện tại để demo không đổi. |
+| Lịch sử trước khi có sự kiện | Tuần cũ không có `lesson_completed` phải dựa vào `completed_at`. Bản ghi hoàn thành trước migration được điền từ `updated_at`, nên tuần đó vẫn là ước lượng. | Không tính lại lịch sử từ `updated_at` sau khi đã có `completed_at`. Sự kiện mới là nhật ký. |
+| Độ ghi nhớ chưa cùng thang với quiz ngắn | `PracticeLog` mới đủ 5 lượt thì hiện độ ghi nhớ và có thể nâng mức `watch`. Bài luyện ngắn kiểu quiz được tính vào chuỗi điểm, không vào độ ghi nhớ. | Một bảng lần luyện chung cho từ vựng, viết và quiz ngắn trước khi dùng độ ghi nhớ để nâng mức `at_risk`. |
+| Nhắc chỉ trong ứng dụng | Chống trùng 24 giờ theo hành động `notify`, không theo từng lý do, không có email. Học viên không mở chuông thì không thấy. | Hàng đợi gửi, cùng khóa chống trùng, email chỉ lặp lại câu lý do đã hiện trên bảng. |
+| Không phải đánh giá năng lực | Cohort gắn nhãn là dữ liệu mô phỏng. Quy tắc chưa được kiểm trên lớp thật. | Giữ câu trên giao diện: đây là tín hiệu hỗ trợ giảng viên. Chỉ báo precision/recall cho đúng bộ phân loại đang chạy trên màn hình đó. |
 
 Tài khoản admin duy nhất có `is_active=False` trong DB local (`demo_admin`) đã được kích hoạt lại; không thay đổi mật khẩu.

@@ -16,7 +16,7 @@ test('guest can search the published catalogue', async ({ page }) => {
 
 test('wrong password stays on the login page', async ({ page }) => {
   await page.goto('/login');
-  await page.getByPlaceholder('Nhập tên đăng nhập của bạn').fill(meta.instructor);
+  await page.getByPlaceholder('Nhập email hoặc tên đăng nhập').fill(meta.instructor);
   await page.getByPlaceholder('••••••••').fill('not-the-password');
   await page.getByRole('button', { name: 'Đăng nhập' }).click();
   await expect(page).toHaveURL(/\/login/);

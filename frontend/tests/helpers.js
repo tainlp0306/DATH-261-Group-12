@@ -13,7 +13,7 @@ export const labels = JSON.parse(readFileSync(
 
 export async function login(page, username, password = meta.password) {
   await page.goto('/login');
-  await page.getByPlaceholder('Nhập tên đăng nhập của bạn').fill(username);
+  await page.getByPlaceholder('Nhập email hoặc tên đăng nhập').fill(username);
   await page.getByPlaceholder('••••••••').fill(password);
   await page.getByRole('button', { name: 'Đăng nhập' }).click();
   await page.waitForURL((url) => !url.pathname.startsWith('/login'));

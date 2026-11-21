@@ -915,6 +915,10 @@ class LessonProgressUpdateView(APIView):
         progress.last_position = request.data.get('last_position', progress.last_position)
         if last_page is not None:
             progress.last_page = last_page
+        if progress.is_completed and not was_completed:
+            progress.completed_at = timezone.now()
+        elif not progress.is_completed:
+            progress.completed_at = None
         progress.save()
         if progress.is_completed and not was_completed:
             log_learning_event(

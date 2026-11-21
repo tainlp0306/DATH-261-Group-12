@@ -231,8 +231,13 @@ def analyze_course(course, now=None):
 
     submissions_by_student = defaultdict(list)
     for submission in submission_rows:
-        if submission.submitted_at and submission.submitted_at <= now:
-            submissions_by_student[submission.student_id].append(submission)
+        # A scored row can predate the submitted_at column. started_at is the next best clock.
+        when = submission.submitted_at or (submission.started_at if submission.score is not None else None)
+        if when is None or when > now:
+            continue
+        if submission.submitted_at is None:
+            submission.submitted_at = when
+        submissions_by_student[submission.student_id].append(submission)
 
     practice_by_student = defaultdict(list)
     for practice in practice_rows:

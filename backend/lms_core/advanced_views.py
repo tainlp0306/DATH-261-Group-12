@@ -53,7 +53,7 @@ class CourseAnalyticsView(APIView):
         levels = {'critical': 3, 'at_risk': 2, 'watch': 1, 'ok': 0}
         report['rows'].sort(
             key=lambda row: (
-                -levels[row['risk_level']],
+                -levels.get(row['risk_level'], 0),
                 -row['pace_gap'],
                 row['username'],
             )
@@ -120,7 +120,7 @@ class CourseInterventionView(APIView):
         notification = Notification.objects.create(
             user=enrollment.student,
             course=course,
-            title='Nhắc tiến độ học tập',
+            title='Nhắc tiến độ',
             message=reason[:255],
             target_url=f'/courses/{course.id}',
         )

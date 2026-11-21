@@ -5,15 +5,16 @@ from zoneinfo import ZoneInfo
 from django.utils import timezone
 
 from .models import (
-    Assignment,
     Enrollment,
     LearningActivity,
     LearningActivityAttempt,
     LearningEvent,
     Lesson,
     LessonProgress,
+    PracticeLog,
     Submission,
 )
+from .services.analytics import retention_score
 
 VN_TZ = ZoneInfo('Asia/Ho_Chi_Minh')
 PLAN_DAYS = 28
@@ -35,9 +36,20 @@ def _median(values):
     return (values[midpoint - 1] + values[midpoint]) / 2
 
 
-def _risk_for(enrolled_days, completion_ratio, inactive_days, quiz_scores):
+def _as_score(value):
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return None
+    if score != score:
+        return None
+    return score
+
+
+def _risk_for(enrolled_days, completion_ratio, inactive_days, quiz_scores, retention=None):
+    numeric_scores = [score for score in (_as_score(item) for item in quiz_scores) if score is not None]
     low_quiz_streak = 0
-    for score in reversed(quiz_scores):
+    for score in reversed(numeric_scores):
         if score < 5:
             low_quiz_streak += 1
         else:
@@ -59,12 +71,18 @@ def _risk_for(enrolled_days, completion_ratio, inactive_days, quiz_scores):
             'code': 'inactive',
             'text': f'Không có hoạt động học trong {inactive_days} ngày và khóa học chưa hoàn thành.',
         })
+    if retention is not None and retention < 40:
+        reasons.append({
+            'code': 'low_retention',
+            'text': f'Độ ghi nhớ ước tính {retention}/100, dưới ngưỡng 40.',
+        })
 
     expected_ratio = min(max(enrolled_days / PLAN_DAYS, 0), 1)
     pace_gap = expected_ratio - completion_ratio
-    if 'inactive' in {reason['code'] for reason in reasons} or low_quiz_streak >= 3:
+    reason_codes = {reason['code'] for reason in reasons}
+    if 'inactive' in reason_codes or low_quiz_streak >= 3:
         level = 'at_risk'
-    elif enrolled_days >= 14 and pace_gap >= 0.25:
+    elif reasons or (enrolled_days >= 14 and pace_gap >= 0.25):
         level = 'watch'
     else:
         level = 'ok'
@@ -112,6 +130,12 @@ def analyze_course(course, now=None):
             activity__course=course,
         ).select_related('activity')
     )
+    practice_rows = list(
+        PracticeLog.objects.filter(
+            student_id__in=student_ids,
+            vocabulary__course=course,
+        )
+    )
 
     events_by_student = defaultdict(list)
     quiz_event_assignment_ids = defaultdict(set)
@@ -127,13 +151,22 @@ def analyze_course(course, now=None):
 
     submissions_by_student = defaultdict(list)
     for submission in submissions:
-        if submission.submitted_at <= now:
-            submissions_by_student[submission.student_id].append(submission)
+        when = submission.submitted_at or (submission.started_at if submission.score is not None else None)
+        if when is None or when > now:
+            continue
+        if submission.submitted_at is None:
+            submission.submitted_at = when
+        submissions_by_student[submission.student_id].append(submission)
 
     attempts_by_student = defaultdict(list)
     for attempt in attempts:
         if attempt.submitted_at <= now:
             attempts_by_student[attempt.student_id].append(attempt)
+
+    practice_by_student = defaultdict(list)
+    for practice in practice_rows:
+        if practice.attempt_date and practice.attempt_date <= now:
+            practice_by_student[practice.student_id].append(practice)
 
     lesson_events_by_student = defaultdict(list)
     for event in events:
@@ -158,35 +191,46 @@ def analyze_course(course, now=None):
         ]
         activity_times.extend(item.submitted_at for item in own_submissions)
         activity_times.extend(item.submitted_at for item in own_attempts)
+        own_practice = practice_by_student[student.id]
+        activity_times.extend(item.attempt_date for item in own_practice)
         activity_times.extend(
             event.occurred_at for event in own_events
             if event.event_type != LearningEvent.ENROLLED
         )
         last_active = max(activity_times, default=enrollment.enrolled_at)
-        quiz_results = [
-            (event.occurred_at, float((event.payload or {}).get('score')))
-            for event in own_events
-            if event.event_type == LearningEvent.QUIZ_SUBMITTED
-            and (event.payload or {}).get('score') is not None
-        ]
+        quiz_results = []
+        for event in own_events:
+            if event.event_type != LearningEvent.QUIZ_SUBMITTED:
+                continue
+            score = _as_score((event.payload or {}).get('score'))
+            if score is None:
+                continue
+            quiz_results.append((event.occurred_at, score))
         seen_assignment_ids = quiz_event_assignment_ids[student.id]
         quiz_results.extend(
-            (submission.submitted_at, float(submission.score))
+            (submission.submitted_at, score)
             for submission in own_submissions
             if submission.assignment_id not in seen_assignment_ids
+            and (score := _as_score(submission.score)) is not None
         )
         quiz_results.extend(
-            (attempt.submitted_at, float(attempt.score))
+            (attempt.submitted_at, score)
             for attempt in own_attempts
             if attempt.activity.activity_type == LearningActivity.QUIZ
-            and attempt.score is not None
+            and (score := _as_score(attempt.score)) is not None
         )
         quiz_results.sort(key=lambda result: result[0])
         quiz_results_by_student[student.id] = quiz_results
         quiz_scores = [score for _, score in quiz_results]
         enrolled_days = max(0, (today - _local_date(enrollment.enrolled_at)).days)
         inactive_days = max(0, (today - _local_date(last_active)).days)
-        risk = _risk_for(enrolled_days, completion_ratio, inactive_days, quiz_scores)
+        last_practice = max((item.attempt_date for item in own_practice), default=None)
+        retention = retention_score(
+            len(own_practice),
+            sum(1 for item in own_practice if item.is_correct),
+            max(0, (today - _local_date(last_practice)).days) if last_practice else None,
+        )
+        risk = _risk_for(enrolled_days, completion_ratio, inactive_days, quiz_scores, retention)
         full_name = f'{student.first_name} {student.last_name}'.strip() or student.username
         rows.append({
             'student_id': student.id,
@@ -201,6 +245,8 @@ def analyze_course(course, now=None):
             'avg_quiz_score': sum(quiz_scores) / len(quiz_scores) if quiz_scores else None,
             'quiz_count': len(quiz_scores),
             'activity_count': len(own_attempts),
+            'practice_attempts': len(own_practice),
+            'retention_score': retention,
             **risk,
         })
 
@@ -222,7 +268,9 @@ def analyze_course(course, now=None):
             }
             completed_lessons.update(
                 progress.lesson_id for progress in progress_by_student[student_id]
-                if progress.is_completed and _local_date(progress.updated_at) <= week_end
+                if progress.is_completed
+                and (progress.completed_at or progress.updated_at)
+                and _local_date(progress.completed_at or progress.updated_at) <= week_end
             )
             ratios.append(min(len(completed_lessons) / total_lessons, 1))
             ages.append(max(0, (week_end - enrolled_on).days))
@@ -241,7 +289,7 @@ def analyze_course(course, now=None):
 
     levels = {'ok': 0, 'watch': 0, 'at_risk': 0}
     for row in rows:
-        levels[row['risk_level']] += 1
+        levels[row['risk_level'] if row['risk_level'] in levels else 'at_risk'] += 1
     completion_buckets = {'0-24': 0, '25-49': 0, '50-74': 0, '75-100': 0}
     for row in rows:
         percent = row['completion_ratio'] * 100

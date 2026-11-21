@@ -7,6 +7,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .analytics import analyze_course as analyze_visible_course
 from .models import Course, Enrollment, Intervention, Notification
 from .services.analytics import analyze_course
 
@@ -141,6 +142,7 @@ class CourseInterveneView(APIView):
             title=title,
             message=message,
             course=course,
+            target_url=f'/courses/{course.id}',
         )
         intervention = Intervention.objects.create(
             course=course,
@@ -167,7 +169,7 @@ class MyAnalyticsView(APIView):
         course = get_object_or_404(Course, pk=course_id)
         if not Enrollment.objects.filter(course=course, student=request.user).exists():
             return Response({'error': 'Bạn chưa ghi danh khóa này.'}, status=404)
-        report = analyze_course(course)
+        report = analyze_visible_course(course)
         row = next((item for item in report['rows'] if item['student_id'] == request.user.id), None)
         if row is None:
             return Response({'error': 'Bạn chưa ghi danh khóa này.'}, status=404)
@@ -177,7 +179,7 @@ class MyAnalyticsView(APIView):
             'completion_ratio': row['completion_ratio'],
             'completed_lessons': row['completed_lessons'],
             'total_lessons': row['total_lessons'],
-            'retention_score': row['retention_score'],
+            'retention_score': row.get('retention_score'),
             'days_since_last_active': row['days_since_last_active'],
             'risk_level': row['risk_level'],
             'message': message,

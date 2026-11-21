@@ -1673,6 +1673,33 @@ class AdvancedComponentsApiTests(APITestCase):
 			status.HTTP_403_FORBIDDEN,
 		)
 
+	def test_low_completion_is_not_marked_on_track(self):
+		Lesson.objects.create(module=self.module, title='Lesson three')
+		Enrollment.objects.filter(pk=self.enrollment.pk).update(
+			enrolled_at=timezone.now() - timedelta(days=14),
+		)
+		progress = LessonProgress.objects.create(
+			student=self.learner, lesson=self.lesson, is_completed=True,
+		)
+		LessonProgress.objects.filter(pk=progress.pk).update(updated_at=timezone.now())
+		self.client.force_authenticate(self.instructor)
+		response = self.client.get(reverse('course_analytics', args=[self.course.pk]))
+		row = response.data['students'][0]
+		self.assertIn('low_completion', [reason['code'] for reason in row['reasons']])
+		self.assertEqual(row['risk_level'], 'watch')
+
+	def test_page_update_does_not_move_completion_time(self):
+		self.client.force_authenticate(self.learner)
+		url = reverse('lesson_progress_update', args=[self.lesson.pk])
+		self.client.post(url, {'is_completed': True, 'last_page': 1}, format='json')
+		progress = LessonProgress.objects.get(student=self.learner, lesson=self.lesson)
+		original = progress.completed_at
+		self.assertIsNotNone(original)
+		self.client.post(url, {'is_completed': True, 'last_page': 2}, format='json')
+		progress.refresh_from_db()
+		self.assertEqual(progress.completed_at, original)
+		self.assertEqual(progress.last_page, 2)
+
 	def test_instructor_intervention_notifies_at_risk_student_once_per_24_hours(self):
 		Enrollment.objects.filter(pk=self.enrollment.pk).update(
 			enrolled_at=timezone.now() - timedelta(days=18),
