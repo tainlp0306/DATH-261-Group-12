@@ -186,7 +186,7 @@ Các mục dưới đây đã được cập nhật trong code. Những thao tá
 
 | Thành phần | Phạm vi đã tích hợp | Trạng thái xác minh / giới hạn |
 |---|---|---|
-| Learning Analytics & Early Warning | Ghi nhận sự kiện học tập theo thời gian; biểu đồ tiến độ và điểm quiz theo tuần; giải thích cảnh báo theo các quy tắc minh bạch; nhắc học viên có chống gửi trùng 24 giờ; lệnh `seed_analytics_demo` tạo cohort mô phỏng 24 học viên. | Có API tests cho quyền truy cập, giải thích rủi ro, lịch sử điểm quiz (gồm quiz ngắn) và nhắc học viên. Cần chạy lại với PostgreSQL/Docker và kiểm tra giao diện thực tế. Biểu đồ dùng lịch sử sự kiện từ khi tính năng được triển khai; dữ liệu cũ chỉ có thể dùng trạng thái tiến độ/kết quả hiện tại làm mốc gần nhất, không phải lịch sử đầy đủ. |
+| Learning Analytics & Early Warning | Một bộ phân loại `lms_core.services.analytics` cho tab, banner, overview và at-risk. Ngưỡng lưu theo khóa. `PracticeAttempt` gom luyện từ, quiz ngắn và viết. Nhắc trong ứng dụng kèm email, chống trùng 24 giờ. | Cohort 24 người vẫn là dữ liệu mô phỏng. Email phụ thuộc SMTP; lỗi gửi không hủy thông báo trong chuông. Nét viết được lưu nhưng không chấm đúng/sai. |
 | Hoạt động luyện tập ngắn tái sử dụng | Instructor tạo/sửa/publish hoạt động trắc nghiệm, gõ từ vựng hoặc luyện viết ký tự; learner đã ghi danh làm bài; có chấm điểm trắc nghiệm/từ vựng và lưu nét viết. `seed_demo_data` tạo ví dụ của cả ba dạng. | Có API tests cho tạo bài, quyền truy cập, chấm điểm và lưu nét viết; chưa xác nhận thủ công trên trình duyệt. Nét viết được lưu nhưng không có nhận dạng/chấm tự động hình dạng chữ. |
 
 ## Ghi nhận lỗi đã xử lý
@@ -194,5 +194,18 @@ Các mục dưới đây đã được cập nhật trong code. Những thao tá
 | Ngày | Vấn đề | Vai trò bị ảnh hưởng | Nguyên nhân | Xử lý |
 |---|---|---|---|---|
 | 2026-10-24 | Course list/detail trả HTTP 500 sau thay đổi outline | Instructor và learner | Migration `0009_assignment_module_submission_answers` chưa áp dụng; outline mới truy vấn `Assignment.module_id` không tồn tại trong DB. Không phát hiện class trùng tên. | Backend log xác nhận cột thiếu; đã áp migration, thêm API list riêng cho instructor và chạy 31 test thành công |
+| 2026-11-19 | Đề cương khóa học vỡ khi học viên đã ghi danh | Learner | `CourseDetailPage` import `LearnerRiskBanner` nhưng component không có trong frontend. | Thêm banner, gọi `GET /me/analytics/`. Banner và tab giảng viên dùng cùng `lms_core.analytics`. |
+| 2026-11-19 | Cảnh báo và huy hiệu không khớp | Instructor | Quy tắc `low_completion` ghi lý do nhưng vẫn để mức `ok` khi lệch tiến độ dưới 25%. | Có lý do thì mức thấp nhất là `watch`. |
+| 2026-11-19 | Hai lớp `LearningEvent` / `Intervention` | Cả hệ thống | Model khai báo hai lần; bản sau ghi đè nên mất `suggest_review` và `practice_attempt`. Migration `0009_learningevent_intervention` tạo lại bảng mà `0011` cũng tạo. | Giữ một model, gộp choices, để `0009` không tạo bảng nữa, `0011` bỏ qua nếu bảng đã có. |
+| 2026-11-19 | Mốc hoàn thành bài học bị kéo theo lần sửa trang | Biểu đồ tiến độ | `updated_at` đổi mỗi lần lưu trang. | Thêm `completed_at`, chỉ gán lúc chuyển sang hoàn thành. |
 
+## Giới hạn còn lại của Learning analytics và cảnh báo sớm
+
+Tab, banner, overview và at-risk cùng đọc `lms_core.services.analytics`. `lms_core.analytics` chỉ thêm số đếm cho bảng giảng viên. Ngưỡng nằm trên `CourseRiskPolicy`. Lần luyện nằm trên `PracticeAttempt`. Email nhắc dùng cùng câu và cùng khóa 24 giờ với thông báo trong chuông.
+
+| Giới hạn | Vì sao chưa đủ reliable | Hướng khắc phục |
+|---|---|---|
+| Lịch sử trước khi có sự kiện | Tuần cũ không có `lesson_completed` phải dựa vào `completed_at`. Bản ghi hoàn thành trước migration được điền từ `updated_at`, nên tuần đó vẫn là ước lượng. | Không tính lại lịch sử từ `updated_at` sau khi đã có `completed_at`. Sự kiện mới là nhật ký. |
+| Email nhắc không có hàng đợi | Cùng khóa chống trùng 24 giờ với thông báo trong chuông. Gửi thất bại chỉ ghi log, không thử lại. | Hàng đợi gửi và thử lại, vẫn dùng đúng câu lý do trên bảng. |
+| Không phải đánh giá năng lực | Cohort gắn nhãn là dữ liệu mô phỏng. Quy tắc chưa được kiểm trên lớp thật. | Giữ câu trên giao diện: đây là tín hiệu hỗ trợ giảng viên. Chỉ báo precision/recall cho đúng bộ phân loại đang chạy trên màn hình đó. |
 Tài khoản admin duy nhất có `is_active=False` trong DB local (`demo_admin`) đã được kích hoạt lại; không thay đổi mật khẩu.

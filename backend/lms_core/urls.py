@@ -22,12 +22,12 @@ from .views import (
     RegistrationOTPRequestView, RegistrationOTPConfirmView,
     SubmitAssignmentView, CourseAssignmentListCreateView, AssignmentSubmissionListView,
     AssignmentGradingView, AssignmentDetailView, AssignmentQuestionAttachmentView,
-    CourseVocabularyListCreateView, PracticeAttemptView,
+    CourseVocabularyListCreateView, PracticeAttemptView, NextPracticeItemView,
     AssignmentAttemptStartView, AssignmentAttemptAnswersView, AssignmentReviewView,
     LearnerAccessActivityView, LearnerProfileSummaryView,
 )
 from .analytics_views import (
-    CourseAnalyticsOverviewView, CourseAtRiskView, CourseInterveneView, MyAnalyticsView,
+    CourseAnalyticsOverviewView, CourseAtRiskView, CourseInterveneView, CourseRiskPolicyView, MyAnalyticsView,
 )
 from .advanced_views import (
     CourseAnalyticsView,
@@ -105,11 +105,13 @@ urlpatterns = [
     path('assignments/<int:assignment_id>/submissions/<int:submission_id>/review/', AssignmentReviewView.as_view(), name='assignment_submission_review'),
     path('assignments/<int:assignment_id>/submissions/', AssignmentSubmissionListView.as_view(), name='assignment_submissions'),
     path('assignments/<int:assignment_id>/grading/', AssignmentGradingView.as_view(), name='assignment_grading'),
+    path('courses/<int:course_id>/analytics/policy/', CourseRiskPolicyView.as_view(), name='course_risk_policy'),
     path('courses/<int:course_id>/analytics/overview/', CourseAnalyticsOverviewView.as_view(), name='course_analytics_overview'),
     path('courses/<int:course_id>/analytics/at-risk/', CourseAtRiskView.as_view(), name='course_analytics_at_risk'),
     path('courses/<int:course_id>/analytics/practice-intervene/', CourseInterveneView.as_view(), name='course_analytics_intervene'),
     path('me/analytics/', MyAnalyticsView.as_view(), name='my_analytics'),
     path('courses/<int:course_id>/vocabulary/', CourseVocabularyListCreateView.as_view(), name='course_vocabulary'),
+    path('courses/<int:course_id>/practice/next/', NextPracticeItemView.as_view(), name='practice_next'),
     path('vocabulary/<int:vocabulary_id>/practice/', PracticeAttemptView.as_view(), name='practice_attempt'),
     path('courses/<int:course_id>/analytics/', CourseAnalyticsView.as_view(), name='course_analytics'),
     path('courses/<int:course_id>/analytics/intervene/', CourseInterventionView.as_view(), name='course_intervention'),

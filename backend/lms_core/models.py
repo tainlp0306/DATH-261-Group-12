@@ -28,6 +28,25 @@ class Course(models.Model):
     def __str__(self):
         return self.title
 
+
+class CourseRiskPolicy(models.Model):
+    """Per-course early-warning thresholds. Missing row means the defaults."""
+
+    course = models.OneToOneField(Course, on_delete=models.CASCADE, related_name='risk_policy')
+    plan_days = models.PositiveIntegerField(default=28)
+    min_enrolled_days = models.PositiveIntegerField(default=14)
+    low_completion_ratio = models.FloatField(default=0.40)
+    inactive_days = models.PositiveIntegerField(default=7)
+    inactive_completion_below = models.FloatField(default=0.80)
+    critical_inactive_days = models.PositiveIntegerField(default=14)
+    quiz_fail_below = models.FloatField(default=5.0)
+    quiz_streak_min = models.PositiveIntegerField(default=3)
+    retention_min_attempts = models.PositiveIntegerField(default=5)
+    retention_flag_below = models.FloatField(default=40.0)
+    watch_score = models.FloatField(default=25)
+    at_risk_score = models.FloatField(default=50)
+    critical_score = models.FloatField(default=75)
+
 class Module(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='modules')
     title = models.CharField(max_length=255)
@@ -62,6 +81,7 @@ class LessonProgress(models.Model):
     is_completed = models.BooleanField(default=False)
     last_position = models.IntegerField(default=0)
     last_page = models.PositiveIntegerField(default=1)
+    completed_at = models.DateTimeField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
 class Test(models.Model):
@@ -99,25 +119,90 @@ class Report(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 class Vocabulary(models.Model):
+    """One practice item. The teacher picks the form; scheduling is not a choice."""
+
     TYPING = 'typing'
     STROKE = 'stroke'
+    THEORY = 'theory'
+    CHOICE = 'choice'
     KIND_CHOICES = [
         (TYPING, 'Gõ'),
         (STROKE, 'Vẽ nét'),
+        (THEORY, 'Lý thuyết'),
+        (CHOICE, 'Trắc nghiệm'),
     ]
 
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='vocabularies')
     word = models.CharField(max_length=255)
     meaning = models.CharField(max_length=255, blank=True)
     romaji = models.CharField(max_length=255, blank=True)
+    prompt = models.TextField(blank=True)
+    options = models.JSONField(default=list, blank=True)
     kind = models.CharField(max_length=16, choices=KIND_CHOICES, default=TYPING)
     stroke_data = models.JSONField(blank=True, null=True)
+    in_queue = models.BooleanField(default=True)
+    source_question = models.OneToOneField(
+        'Question', null=True, blank=True, on_delete=models.CASCADE, related_name='review_item',
+    )
 
 class PracticeLog(models.Model):
     student = models.ForeignKey(User, on_delete=models.CASCADE)
     vocabulary = models.ForeignKey(Vocabulary, on_delete=models.CASCADE)
     is_correct = models.BooleanField(default=False)
     attempt_date = models.DateTimeField(auto_now_add=True)
+
+
+class PracticeSchedule(models.Model):
+    """Per learner, per item. The teacher never edits these fields."""
+
+    student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='practice_schedules')
+    vocabulary = models.ForeignKey(Vocabulary, on_delete=models.CASCADE, related_name='schedules')
+    due_at = models.DateTimeField()
+    interval_days = models.PositiveIntegerField(default=0)
+    last_incorrect_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['student', 'vocabulary'], name='unique_practice_schedule'),
+        ]
+
+
+class PracticeAttempt(models.Model):
+    """One row for vocabulary practice and short activities, including writing."""
+
+    TYPING = 'typing'
+    STROKE = 'stroke'
+    THEORY = 'theory'
+    CHOICE = 'choice'
+    QUIZ = 'quiz'
+    VOCABULARY = 'vocabulary'
+    WRITING = 'writing'
+    KIND_CHOICES = [
+        (TYPING, 'Gõ'),
+        (STROKE, 'Vẽ nét'),
+        (THEORY, 'Lý thuyết'),
+        (CHOICE, 'Trắc nghiệm'),
+        (QUIZ, 'Trắc nghiệm ngắn'),
+        (VOCABULARY, 'Luyện từ vựng'),
+        (WRITING, 'Luyện viết'),
+    ]
+
+    student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='practice_attempts')
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='practice_attempts')
+    vocabulary = models.ForeignKey(Vocabulary, null=True, blank=True, on_delete=models.SET_NULL)
+    activity = models.ForeignKey(
+        'LearningActivity', null=True, blank=True, on_delete=models.SET_NULL,
+    )
+    practice_log = models.OneToOneField(
+        PracticeLog, null=True, blank=True, on_delete=models.CASCADE, related_name='fact',
+    )
+    activity_attempt = models.OneToOneField(
+        'LearningActivityAttempt', null=True, blank=True, on_delete=models.CASCADE, related_name='fact',
+    )
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES)
+    is_correct = models.BooleanField(null=True, blank=True)
+    score = models.FloatField(null=True, blank=True)
+    attempted_at = models.DateTimeField(db_index=True)
 
 class Quiz(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='quizzes')
@@ -169,50 +254,6 @@ class LessonPage(models.Model):
 
     class Meta:
         ordering = ['page_number', 'id']
-
-
-class LearningEvent(models.Model):
-    LESSON_COMPLETED = 'lesson_completed'
-    QUIZ_SUBMITTED = 'quiz_submitted'
-    FILE_SUBMITTED = 'file_submitted'
-    PRACTICE_ATTEMPT = 'practice_attempt'
-    ENROLLED = 'enrolled'
-    EVENT_TYPES = [
-        (LESSON_COMPLETED, 'Hoàn thành bài học'),
-        (QUIZ_SUBMITTED, 'Nộp quiz'),
-        (FILE_SUBMITTED, 'Nộp bài tệp'),
-        (PRACTICE_ATTEMPT, 'Luyện tập'),
-        (ENROLLED, 'Ghi danh'),
-    ]
-
-    actor = models.ForeignKey(User, null=True, on_delete=models.SET_NULL, related_name='learning_events')
-    course = models.ForeignKey(Course, null=True, on_delete=models.CASCADE, related_name='learning_events')
-    lesson = models.ForeignKey(Lesson, null=True, blank=True, on_delete=models.SET_NULL)
-    assignment = models.ForeignKey('Assignment', null=True, blank=True, on_delete=models.SET_NULL)
-    event_type = models.CharField(max_length=32, choices=EVENT_TYPES)
-    payload = models.JSONField(default=dict, blank=True)
-    occurred_at = models.DateTimeField(db_index=True)
-    source = models.CharField(max_length=16, default='web')
-
-    class Meta:
-        indexes = [
-            models.Index(fields=['course', 'occurred_at'], name='lms_core_le_course_occur_idx'),
-            models.Index(fields=['actor', 'course', 'occurred_at'], name='lms_core_le_actor_course_idx'),
-            models.Index(fields=['course', 'event_type', 'occurred_at'], name='lms_core_le_type_occur_idx'),
-        ]
-
-
-class Intervention(models.Model):
-    NOTIFY = 'notify'
-    SUGGEST_REVIEW = 'suggest_review'
-
-    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='interventions')
-    student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='interventions_received')
-    actor = models.ForeignKey(User, null=True, on_delete=models.SET_NULL, related_name='interventions_sent')
-    action = models.CharField(max_length=32)
-    notification = models.ForeignKey(Notification, null=True, blank=True, on_delete=models.SET_NULL)
-    created_at = models.DateTimeField(auto_now_add=True)
-
 
 class SystemLog(models.Model):
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
@@ -273,6 +314,7 @@ class Question(models.Model):
     option_d = models.CharField(max_length=255)
     correct_option = models.CharField(max_length=1)
     explanation = models.TextField(blank=True)
+    add_to_review = models.BooleanField(default=False)
     attachment = models.FileField(upload_to='assignments/questions/', blank=True, null=True)
 
 class Submission(models.Model):
@@ -331,12 +373,14 @@ class LearningEvent(models.Model):
     LESSON_COMPLETED = 'lesson_completed'
     QUIZ_SUBMITTED = 'quiz_submitted'
     FILE_SUBMITTED = 'file_submitted'
+    PRACTICE_ATTEMPT = 'practice_attempt'
     ACTIVITY_SUBMITTED = 'activity_submitted'
     ENROLLED = 'enrolled'
     EVENT_TYPES = [
         (LESSON_COMPLETED, 'Hoàn thành bài học'),
         (QUIZ_SUBMITTED, 'Nộp bài trắc nghiệm'),
         (FILE_SUBMITTED, 'Nộp bài tệp'),
+        (PRACTICE_ATTEMPT, 'Luyện tập'),
         (ACTIVITY_SUBMITTED, 'Hoàn thành bài luyện tập ngắn'),
         (ENROLLED, 'Ghi danh khóa học'),
     ]
@@ -368,8 +412,11 @@ class LearningEvent(models.Model):
 
 class Intervention(models.Model):
     NOTIFY = 'notify'
-    ACTIONS = [(NOTIFY, 'Nhắc học viên')]
-
+    SUGGEST_REVIEW = 'suggest_review'
+    ACTIONS = [
+        (NOTIFY, 'Nhắc học viên'),
+        (SUGGEST_REVIEW, 'Gợi ý ôn lại'),
+    ]
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='interventions')
     student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='interventions_received')
     actor = models.ForeignKey(

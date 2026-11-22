@@ -1,8 +1,10 @@
 import json
 from datetime import datetime, timedelta, timezone as dt_timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 from django.contrib.auth import get_user_model
+from django.core import mail
 from django.core.management import call_command
 from django.test import TestCase
 from django.utils import timezone
@@ -20,6 +22,7 @@ from lms_core.models import (
     Question,
     Submission,
 )
+
 from lms_core.services.analytics import (
     analyze_course,
     classify_risk,
@@ -123,6 +126,25 @@ class AnalyticsFormulaTests(TestCase):
         ))
         self.assertEqual(row['risk_level'], 'ok')
         self.assertFalse(row['baseline_positive'])
+
+    def test_course_policy_can_delay_the_completion_rule(self):
+        policy = SimpleNamespace(
+            plan_days=28,
+            min_enrolled_days=30,
+            low_completion_ratio=0.40,
+            inactive_days=7,
+            inactive_completion_below=0.80,
+            critical_inactive_days=14,
+            quiz_fail_below=5,
+            quiz_streak_min=3,
+            retention_min_attempts=5,
+            retention_flag_below=40,
+            watch_score=25,
+            at_risk_score=50,
+            critical_score=75,
+        )
+        row = classify_risk(_metrics(enrolled_days=14, completion_ratio=0), policy)
+        self.assertNotIn('low_completion_after_two_weeks', [item['code'] for item in row['reasons']])
 
     def test_zero_lessons_do_not_divide_by_zero_via_ratio_zero(self):
         row = classify_risk(_metrics(enrolled_days=20, completion_ratio=0, days_since_last_active=20))
@@ -236,6 +258,30 @@ class AnalyticsApiTests(APITestCase):
         missing = self.client.post(url, {'student_id': self.learner.id, 'action': 'notify'}, format='json')
         self.assertEqual(missing.status_code, 404)
         self.assertEqual(self.client.get(f'/api/auth/courses/{self.course.id}/analytics/at-risk/').data['results'], [])
+
+    def test_policy_round_trip_and_reminder_email_follows_the_24_hour_dedupe(self):
+        self._enroll(days_ago=21)
+        self.client.force_authenticate(self.instructor)
+        policy_url = f'/api/auth/courses/{self.course.id}/analytics/policy/'
+        current = self.client.get(policy_url)
+        self.assertEqual(current.status_code, 200)
+        self.assertFalse(current.data['persisted'])
+        saved = self.client.put(policy_url, {**current.data, 'plan_days': 21}, format='json')
+        self.assertEqual(saved.status_code, 200, saved.data)
+        self.assertTrue(saved.data['persisted'])
+        self.assertEqual(saved.data['plan_days'], 21)
+        rejected = self.client.put(policy_url, {**current.data, 'plan_days': 1}, format='json')
+        self.assertEqual(rejected.status_code, 400)
+
+        url = f'/api/auth/courses/{self.course.id}/analytics/intervene/'
+        first = self.client.post(url, {'student_id': self.learner.id, 'action': 'notify'}, format='json')
+        self.assertEqual(first.status_code, 201)
+        self.assertTrue(first.data['email_sent'])
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(self.learner.email, mail.outbox[0].to)
+        second = self.client.post(url, {'student_id': self.learner.id, 'action': 'notify'}, format='json')
+        self.assertTrue(second.data['deduplicated'])
+        self.assertEqual(len(mail.outbox), 1)
 
     def test_learner_analytics_is_only_their_enrollment(self):
         self._enroll(days_ago=2)

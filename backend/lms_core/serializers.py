@@ -9,6 +9,7 @@ from .models import (
     Assignment, Submission, Vocabulary,
     LearningActivity, LearningActivityAttempt, LearningActivityItem,
 )
+from .services.practice import sync_review_item
 
 User = get_user_model()
 
@@ -203,19 +204,48 @@ class CourseOutlineSerializer(CourseSerializer):
 class VocabularySerializer(serializers.ModelSerializer):
     class Meta:
         model = Vocabulary
-        fields = ('id', 'course', 'word', 'meaning', 'romaji', 'kind', 'stroke_data')
-        read_only_fields = ('course',)
+        fields = (
+            'id', 'course', 'word', 'meaning', 'romaji', 'prompt', 'options',
+            'kind', 'stroke_data', 'in_queue',
+        )
+        read_only_fields = ('course', 'in_queue')
 
-    def validate_kind(self, value):
-        if value not in ('typing', 'stroke'):
-            raise serializers.ValidationError('Loại luyện tập không hợp lệ.')
-        return value
+    def validate(self, attrs):
+        kind = attrs.get('kind', getattr(self.instance, 'kind', Vocabulary.TYPING))
+        word = str(attrs.get('word', getattr(self.instance, 'word', ''))).strip()
+        prompt = str(attrs.get('prompt', getattr(self.instance, 'prompt', ''))).strip()
+        options = attrs.get('options', getattr(self.instance, 'options', []) or [])
+        if kind in (Vocabulary.TYPING, Vocabulary.STROKE) and not word:
+            raise serializers.ValidationError({'word': ['Nội dung luyện tập không được để trống.']})
+        if kind == Vocabulary.THEORY:
+            if not prompt:
+                raise serializers.ValidationError({'prompt': ['Câu hỏi không được để trống.']})
+            if not word:
+                raise serializers.ValidationError({'word': ['Đáp án ngắn không được để trống.']})
+        if kind == Vocabulary.CHOICE:
+            cleaned = []
+            for option in options:
+                text = str(option).strip()
+                if text and text not in cleaned:
+                    cleaned.append(text)
+            if len(cleaned) < 2:
+                raise serializers.ValidationError({'options': ['Cần ít nhất hai lựa chọn.']})
+            if word not in cleaned:
+                raise serializers.ValidationError({'word': ['Đáp án đúng phải nằm trong các lựa chọn.']})
+            attrs['options'] = cleaned
+        elif options:
+            attrs['options'] = []
+        if 'word' in attrs:
+            attrs['word'] = word
+        if 'prompt' in attrs:
+            attrs['prompt'] = prompt
+        return attrs
 
-    def validate_word(self, value):
-        cleaned = value.strip()
-        if not cleaned:
-            raise serializers.ValidationError('Nội dung luyện tập không được để trống.')
-        return cleaned
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if self.context.get('hide_answers') and instance.kind in (Vocabulary.THEORY, Vocabulary.CHOICE):
+            data.pop('word', None)
+        return data
 
 
 class EnrollmentSerializer(serializers.ModelSerializer):
@@ -305,8 +335,7 @@ class AssignmentQuestionSerializer(serializers.ModelSerializer):
         model = Question
         fields = [
             'id', 'content', 'option_a', 'option_b', 'option_c', 'option_d',
-            'correct_option', 'explanation', 'attachment',
-        ]
+            'correct_option', 'explanation', 'attachment', 'add_to_review',        ]
         read_only_fields = ['id']
         extra_kwargs = {
             'correct_option': {'write_only': True},
@@ -401,6 +430,8 @@ class AssignmentSerializer(serializers.ModelSerializer):
         Question.objects.bulk_create([
             Question(assignment=assignment, **question) for question in questions
         ])
+        for question in assignment.questions.all():
+            sync_review_item(question)
         return assignment
 
     @transaction.atomic
@@ -422,7 +453,8 @@ class AssignmentSerializer(serializers.ModelSerializer):
                     question = Question.objects.create(assignment=instance, **values)
             for removed in existing[len(questions):]:
                 removed.delete()
-
+            for question in instance.questions.all():
+                sync_review_item(question)
             current_questions = list(Question.objects.filter(assignment=instance))
             if current_questions:
                 for submission in instance.submissions.all():

@@ -23,9 +23,8 @@ from .email_backends import EmailDeliveryError, MailjetEmailBackend
 from .models import (
 	AdminLog, Assignment, Comment, Course, EmailOTP, Enrollment, Intervention, LearnerAccessSession, LearningActivity,
 	LearningActivityAttempt, LearningActivityItem, LearningEvent, Lesson, LessonProgress,
-	LoginEvent, Module, Notification, PracticeLog, Question, Report, Submission, Test, TestSubmission,
-	Vocabulary,
-)
+	LoginEvent, Module, Notification, PracticeLog, PracticeSchedule, Question, Report, Submission, Test, TestSubmission,
+	Vocabulary,)
 
 User = get_user_model()
 
@@ -346,7 +345,6 @@ class InstructorDraftCourseTests(APITestCase):
 		)
 		self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 		self.assertFalse(Module.objects.filter(course=self.draft).exists())
-
 
 class CourseOwnershipRegressionTests(APITestCase):
 	def setUp(self):
@@ -1584,6 +1582,116 @@ class PracticeApiTests(APITestCase):
 		)
 		self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
+	def test_four_forms_schedule_and_hide_the_choice_answer(self):
+		self.client.force_authenticate(self.instructor)
+		choice = self.client.post(
+			reverse('course_vocabulary', args=[self.course.pk]),
+			{
+				'kind': 'choice',
+				'prompt': 'Từ nào nghĩa là xin chào?',
+				'word': 'Hello',
+				'options': ['Hello', 'Goodbye', 'Please'],
+			},
+			format='json',
+		)
+		self.assertEqual(choice.status_code, status.HTTP_201_CREATED)
+		self.assertEqual(choice.data['word'], 'Hello')
+		theory = self.client.post(
+			reverse('course_vocabulary', args=[self.course.pk]),
+			{'kind': 'theory', 'prompt': '2 + 2 bằng mấy?', 'word': '4'},
+			format='json',
+		)
+		self.assertEqual(theory.status_code, status.HTTP_201_CREATED)
+		stroke = self.client.post(
+			reverse('course_vocabulary', args=[self.course.pk]),
+			{'kind': 'stroke', 'word': '日'},
+			format='json',
+		)
+		self.assertEqual(stroke.status_code, status.HTTP_201_CREATED)
+
+		self.client.force_authenticate(self.learner)
+		visible = self.client.get(reverse('course_vocabulary', args=[self.course.pk]))
+		choice_row = next(row for row in visible.data if row['id'] == choice.data['id'])
+		self.assertNotIn('word', choice_row)
+		self.assertEqual(choice_row['options'], ['Hello', 'Goodbye', 'Please'])
+
+		wrong = self.client.post(
+			reverse('practice_attempt', args=[choice.data['id']]),
+			{'answer': 'Goodbye'},
+			format='json',
+		)
+		self.assertFalse(wrong.data['is_correct'])
+		self.assertNotIn('word', wrong.data)
+		self.assertEqual(wrong.data['interval_days'], 1)
+		missed = PracticeSchedule.objects.get(student=self.learner, vocabulary_id=choice.data['id'])
+		self.assertLessEqual(missed.due_at, timezone.now())
+
+		right = self.client.post(
+			reverse('practice_attempt', args=[theory.data['id']]),
+			{'answer': '4'},
+			format='json',
+		)
+		self.assertTrue(right.data['is_correct'])
+		self.assertEqual(right.data['interval_days'], 1)
+		drawn = self.client.post(
+			reverse('practice_attempt', args=[stroke.data['id']]),
+			{'answer': '日'},
+			format='json',
+		)
+		self.assertTrue(drawn.data['is_correct'])
+
+		nxt = self.client.get(reverse('practice_next', args=[self.course.pk]))
+		self.assertEqual(nxt.data['reason'], 'due')
+		self.assertEqual(nxt.data['item']['id'], choice.data['id'])
+		self.assertNotIn('word', nxt.data['item'])
+
+	def test_next_item_uses_retention_when_nothing_is_due(self):
+		strong = Vocabulary.objects.create(course=self.course, word='strong', kind='typing')
+		weak = Vocabulary.objects.create(course=self.course, word='weak', kind='typing')
+		now = timezone.now()
+		for item, when in ((strong, now), (weak, now - timedelta(days=7))):
+			for _index in range(5):
+				log = PracticeLog.objects.create(student=self.learner, vocabulary=item, is_correct=True)
+				PracticeLog.objects.filter(pk=log.pk).update(attempt_date=when)
+			PracticeSchedule.objects.create(
+				student=self.learner, vocabulary=item, due_at=now + timedelta(days=30), interval_days=7,
+			)
+		self.client.force_authenticate(self.learner)
+		response = self.client.get(reverse('practice_next', args=[self.course.pk]))
+		self.assertEqual(response.data['reason'], 'retention')
+		self.assertEqual(response.data['item']['id'], weak.pk)
+
+	def test_only_marked_exam_questions_enter_the_review_queue(self):
+		self.client.force_authenticate(self.instructor)
+		created = self.client.post(
+			reverse('course_assignments', args=[self.course.pk]),
+			{
+				'title': 'Kiểm tra',
+				'description': 'Giữ điểm và hạn nộp.',
+				'assignment_type': 'quiz',
+				'deadline': (timezone.now() + timedelta(days=3)).isoformat(),
+				'questions': [
+					{
+						'content': 'Câu được ôn',
+						'option_a': 'A1', 'option_b': 'B1', 'option_c': 'C1', 'option_d': 'D1',
+						'correct_option': 'A', 'add_to_review': True,
+					},
+					{
+						'content': 'Câu không ôn',
+						'option_a': 'A2', 'option_b': 'B2', 'option_c': 'C2', 'option_d': 'D2',
+						'correct_option': 'B', 'add_to_review': False,
+					},
+				],
+			},
+			format='json',
+		)
+		self.assertEqual(created.status_code, status.HTTP_201_CREATED)
+		self.assertEqual(Assignment.objects.get(pk=created.data['id']).deadline.date(), (timezone.now() + timedelta(days=3)).date())
+		queued = Vocabulary.objects.filter(course=self.course, in_queue=True, source_question__isnull=False)
+		self.assertEqual(queued.count(), 1)
+		self.assertEqual(queued.get().prompt, 'Câu được ôn')
+		self.assertEqual(queued.get().word, 'A1')
+		self.assertEqual(queued.get().kind, 'choice')
 
 class AdvancedComponentsApiTests(APITestCase):
 	def setUp(self):
@@ -1662,7 +1770,7 @@ class AdvancedComponentsApiTests(APITestCase):
 		self.assertEqual(response.data['enrolled_count'], 1)
 		row = response.data['students'][0]
 		self.assertEqual(row['risk_level'], 'at_risk')
-		self.assertIn('quiz_failures', [reason['code'] for reason in row['reasons']])
+		self.assertIn('consecutive_quiz_failures', [reason['code'] for reason in row['reasons']])
 		self.assertEqual(row['quiz_count'], 3)
 		self.assertEqual(len(response.data['weekly_progress']), 8)
 		self.assertAlmostEqual(response.data['weekly_progress'][-1]['mean_quiz_score'], 3.0)
@@ -1673,6 +1781,32 @@ class AdvancedComponentsApiTests(APITestCase):
 			status.HTTP_403_FORBIDDEN,
 		)
 
+	def test_low_completion_is_not_marked_on_track(self):
+		Lesson.objects.create(module=self.module, title='Lesson three')
+		Enrollment.objects.filter(pk=self.enrollment.pk).update(
+			enrolled_at=timezone.now() - timedelta(days=14),
+		)
+		progress = LessonProgress.objects.create(
+			student=self.learner, lesson=self.lesson, is_completed=True,
+		)
+		LessonProgress.objects.filter(pk=progress.pk).update(updated_at=timezone.now())
+		self.client.force_authenticate(self.instructor)
+		response = self.client.get(reverse('course_analytics', args=[self.course.pk]))
+		row = response.data['students'][0]
+		self.assertIn('low_completion_after_two_weeks', [reason['code'] for reason in row['reasons']])
+		self.assertEqual(row['risk_level'], 'at_risk')
+
+	def test_page_update_does_not_move_completion_time(self):
+		self.client.force_authenticate(self.learner)
+		url = reverse('lesson_progress_update', args=[self.lesson.pk])
+		self.client.post(url, {'is_completed': True, 'last_page': 1}, format='json')
+		progress = LessonProgress.objects.get(student=self.learner, lesson=self.lesson)
+		original = progress.completed_at
+		self.assertIsNotNone(original)
+		self.client.post(url, {'is_completed': True, 'last_page': 2}, format='json')
+		progress.refresh_from_db()
+		self.assertEqual(progress.completed_at, original)
+		self.assertEqual(progress.last_page, 2)
 	def test_instructor_intervention_notifies_at_risk_student_once_per_24_hours(self):
 		Enrollment.objects.filter(pk=self.enrollment.pk).update(
 			enrolled_at=timezone.now() - timedelta(days=18),

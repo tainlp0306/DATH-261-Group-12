@@ -12,6 +12,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .analytics import analyze_course, log_learning_event
+from .services.analytics import send_progress_email
 from .models import (
     Course,
     Enrollment,
@@ -53,8 +54,7 @@ class CourseAnalyticsView(APIView):
         levels = {'critical': 3, 'at_risk': 2, 'watch': 1, 'ok': 0}
         report['rows'].sort(
             key=lambda row: (
-                -levels[row['risk_level']],
-                -row['pace_gap'],
+                -levels.get(row['risk_level'], 0),                -row['pace_gap'],
                 row['username'],
             )
         )
@@ -120,7 +120,7 @@ class CourseInterventionView(APIView):
         notification = Notification.objects.create(
             user=enrollment.student,
             course=course,
-            title='Nhắc tiến độ học tập',
+            title='Nhắc tiến độ',
             message=reason[:255],
             target_url=f'/courses/{course.id}',
         )
@@ -131,10 +131,12 @@ class CourseInterventionView(APIView):
             action=Intervention.NOTIFY,
             notification=notification,
         )
+        email_sent = send_progress_email(enrollment.student, course, notification.message)
         return Response({
             'deduplicated': False,
             'intervention_id': intervention.id,
             'notification_id': notification.id,
+            'email_sent': email_sent,
         }, status=status.HTTP_201_CREATED)
 
 

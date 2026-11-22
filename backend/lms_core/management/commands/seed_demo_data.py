@@ -5,6 +5,7 @@ from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
+from lms_core.services.practice import sync_review_item
 from lms_core.models import (
     AdminLog,
     Assignment,
@@ -20,6 +21,7 @@ from lms_core.models import (
     Notification,
     Question,
     Report,
+    Vocabulary,
     Submission,
 )
 
@@ -228,9 +230,8 @@ class Command(BaseCommand):
         ]
         question_texts = [item[0] for item in question_data]
         quiz.questions.exclude(content__in=question_texts).delete()
-        for content, option_a, option_b, option_c, option_d, correct_option in question_data:
-            Question.objects.update_or_create(
-                assignment=quiz,
+        for index, (content, option_a, option_b, option_c, option_d, correct_option) in enumerate(question_data):
+            question, _created = Question.objects.update_or_create(                assignment=quiz,
                 content=content,
                 defaults={
                     'option_a': option_a,
@@ -238,8 +239,24 @@ class Command(BaseCommand):
                     'option_c': option_c,
                     'option_d': option_d,
                     'correct_option': correct_option,
+                    'add_to_review': index == 0,
                 },
             )
+            sync_review_item(question)
+        choice_samples = [
+            ('Từ nào nghĩa là "xin chào"?', 'Hello', ['Hello', 'Goodbye', 'Please', 'Thanks']),
+            ('Câu nào là lời giới thiệu đúng?', 'My name is Anna.', ['My name Anna.', 'I name is Anna.', 'My name is Anna.', 'Name my Anna.']),
+            ('"Nice to meet you" dùng khi nào?', 'Khi mới gặp ai đó', ['Khi mới gặp ai đó', 'Khi tạm biệt', 'Khi xin lỗi', 'Khi hỏi giờ']),
+        ]
+        sample_prompts = [item[0] for item in choice_samples]
+        for prompt, answer, options in choice_samples:
+            Vocabulary.objects.update_or_create(
+                course=course,
+                kind=Vocabulary.CHOICE,
+                prompt=prompt,
+                defaults={'word': answer, 'options': options, 'meaning': '', 'romaji': '', 'in_queue': True},
+            )
+        Vocabulary.objects.filter(course=course, kind=Vocabulary.CHOICE, source_question__isnull=True).exclude(prompt__in=sample_prompts).delete()
         Submission.objects.update_or_create(
             assignment=quiz,
             student=learner_two,

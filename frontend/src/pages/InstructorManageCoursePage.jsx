@@ -564,8 +564,7 @@ const InstructorManageCoursePage = () => {
           <BookOpen className="w-4 h-4" /> Luyện tập
         </button>
         <button
-          type="button"
-          data-testid="tab-activities"
+          type="button"          data-testid="tab-activities"
           onClick={() => setActiveTab('activities')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
             activeTab === 'activities'
@@ -945,7 +944,6 @@ const InstructorManageCoursePage = () => {
                 />
                 <span className="mt-1 block text-xs font-normal normal-case text-slate-500">Chọn hoặc bỏ chọn nhiều khóa học.</span>
               </div>
-
               <div className="flex items-center justify-between p-3.5 bg-slate-50 rounded-xl border border-slate-200">
                 <div>
                   <span className="block text-xs font-bold text-slate-800">Xuất bản khóa học</span>

@@ -265,7 +265,6 @@ const CreateCoursePage = () => {
                 />
                 <span className="mt-1 block text-xs font-normal normal-case text-slate-500">Có thể chọn nhiều khóa và bỏ chọn bất kỳ lúc nào trước khi tạo.</span>
               </div>
-
               <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-200">
                 <span className="text-xs font-semibold text-slate-700">Xuất bản khóa học ngay (Publish)</span>
                 <input

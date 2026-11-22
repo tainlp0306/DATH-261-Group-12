@@ -112,13 +112,12 @@ const CourseDetailPage = () => {
         <Link to="/courses" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-emerald-800"><ArrowLeft className="h-4 w-4" /> Tất cả khóa học</Link>
         <div className="flex flex-wrap gap-2">
           {isEnrolled && (
-            <Link to={`/courses/${course.id}/practice`} data-testid="open-practice" className="bg-indigo-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-800">Luyện gõ và viết</Link>
+            <Link to={`/courses/${course.id}/practice`} data-testid="open-practice" className="bg-indigo-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-800">Luyện tập</Link>
           )}
           {isLearner && !isEnrolled && (
             <button type="button" onClick={enroll} className="bg-emerald-800 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-900">Đăng ký khóa học</button>
           )}
-        </div>
-      </div>
+        </div>      </div>
 
       <header className="py-6">
         <p className="text-xs font-bold uppercase tracking-wider text-emerald-800">Đề cương khóa học</p>
@@ -136,7 +135,6 @@ const CourseDetailPage = () => {
       </header>
 
       {isEnrolled && <LearnerRiskBanner courseId={course.id} />}
-
       <section className="border-y border-slate-300" aria-label="Chương, bài học và bài tập">
         {modules.length === 0 ? <p className="py-8 text-sm text-slate-500">Khóa học chưa có chương học.</p> : modules.map((module, index) => {
           const lessons = [...(module.lessons || [])].sort((left, right) => left.order - right.order);

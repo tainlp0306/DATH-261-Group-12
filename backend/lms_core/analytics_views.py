@@ -7,8 +7,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Course, Enrollment, Intervention, Notification
-from .services.analytics import analyze_course
+from .analytics import analyze_course as analyze_visible_course
+from .models import Course, CourseRiskPolicy, Enrollment, Intervention, Notification
+from .services.analytics import analyze_course, send_progress_email
 
 LEVEL_FILTERS = {
     'at_risk': {'at_risk', 'critical'},
@@ -56,7 +57,7 @@ def _overview_payload(course, report):
         'course_id': course.id,
         'course_title': course.title,
         'as_of': report['as_of'],
-        'plan_days': 28,
+        'plan_days': report.get('plan_days', 28),
         'enrolled_count': len(report['rows']),
         'mean_completion_ratio': report['mean_completion_ratio'],
         'mean_retention': report['mean_retention'],
@@ -125,6 +126,7 @@ class CourseInterveneView(APIView):
         if existing is not None:
             return Response({
                 'deduplicated': True,
+                'email_sent': False,
                 'intervention_id': existing.id,
                 'notification_id': existing.notification_id,
             })
@@ -141,6 +143,7 @@ class CourseInterveneView(APIView):
             title=title,
             message=message,
             course=course,
+            target_url=f'/courses/{course.id}',
         )
         intervention = Intervention.objects.create(
             course=course,
@@ -149,8 +152,10 @@ class CourseInterveneView(APIView):
             action=action,
             notification=notification,
         )
+        email_sent = send_progress_email(enrollment.student, course, notification.message)
         return Response({
             'deduplicated': False,
+            'email_sent': email_sent,
             'intervention_id': intervention.id,
             'notification_id': notification.id,
         }, status=201)
@@ -167,7 +172,7 @@ class MyAnalyticsView(APIView):
         course = get_object_or_404(Course, pk=course_id)
         if not Enrollment.objects.filter(course=course, student=request.user).exists():
             return Response({'error': 'Bạn chưa ghi danh khóa này.'}, status=404)
-        report = analyze_course(course)
+        report = analyze_visible_course(course)
         row = next((item for item in report['rows'] if item['student_id'] == request.user.id), None)
         if row is None:
             return Response({'error': 'Bạn chưa ghi danh khóa này.'}, status=404)
@@ -177,8 +182,92 @@ class MyAnalyticsView(APIView):
             'completion_ratio': row['completion_ratio'],
             'completed_lessons': row['completed_lessons'],
             'total_lessons': row['total_lessons'],
-            'retention_score': row['retention_score'],
+            'retention_score': row.get('retention_score'),
             'days_since_last_active': row['days_since_last_active'],
             'risk_level': row['risk_level'],
             'message': message,
         })
+
+
+POLICY_FIELDS = (
+    ('plan_days', int, 7, 180),
+    ('min_enrolled_days', int, 1, 120),
+    ('low_completion_ratio', float, 0.05, 0.95),
+    ('inactive_days', int, 1, 90),
+    ('inactive_completion_below', float, 0.05, 1),
+    ('critical_inactive_days', int, 1, 180),
+    ('quiz_fail_below', float, 0, 10),
+    ('quiz_streak_min', int, 1, 10),
+    ('retention_min_attempts', int, 1, 50),
+    ('retention_flag_below', float, 0, 100),
+    ('watch_score', float, 0, 100),
+    ('at_risk_score', float, 0, 100),
+    ('critical_score', float, 0, 100),
+)
+
+
+def policy_payload(policy, persisted):
+    return {
+        'persisted': persisted,
+        **{name: getattr(policy, name) for name, *_rest in POLICY_FIELDS},
+    }
+
+
+def _clean_policy(data):
+    if not isinstance(data, dict):
+        return None, {'detail': ['Thiếu ngưỡng.']}
+    cleaned = {}
+    errors = {}
+    for name, kind, low, high in POLICY_FIELDS:
+        if name not in data:
+            errors[name] = ['Thiếu ngưỡng.']
+            continue
+        value = data[name]
+        if kind is int:
+            if isinstance(value, bool) or isinstance(value, float) or not isinstance(value, int):
+                errors[name] = ['Phải là số nguyên.']
+                continue
+        else:
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                errors[name] = ['Phải là số.']
+                continue
+        if not low <= value <= high:
+            errors[name] = [f'Nằm trong khoảng {low:g}–{high:g}.']
+            continue
+        cleaned[name] = value
+    if 'critical_inactive_days' in cleaned and 'inactive_days' in cleaned:
+        if cleaned['critical_inactive_days'] < cleaned['inactive_days']:
+            errors['critical_inactive_days'] = ['Phải lớn hơn hoặc bằng số ngày nghỉ.']
+    if {'watch_score', 'at_risk_score', 'critical_score'} <= set(cleaned):
+        if not cleaned['watch_score'] < cleaned['at_risk_score'] < cleaned['critical_score']:
+            errors['watch_score'] = ['Mốc watch, at_risk và critical phải tăng dần.']
+    if errors:
+        return None, errors
+    return cleaned, None
+
+
+class CourseRiskPolicyView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, course_id):
+        course = get_object_or_404(Course, pk=course_id)
+        if not _can_manage(request.user, course):
+            return Response({'error': 'Bạn không phụ trách khóa này.'}, status=403)
+        try:
+            policy = course.risk_policy
+        except CourseRiskPolicy.DoesNotExist:
+            policy = CourseRiskPolicy(course=course)
+            return Response(policy_payload(policy, persisted=False))
+        return Response(policy_payload(policy, persisted=True))
+
+    def put(self, request, course_id):
+        course = get_object_or_404(Course, pk=course_id)
+        if not _can_manage(request.user, course):
+            return Response({'error': 'Bạn không phụ trách khóa này.'}, status=403)
+        cleaned, errors = _clean_policy(request.data)
+        if errors:
+            return Response(errors, status=400)
+        policy, _created = CourseRiskPolicy.objects.update_or_create(course=course, defaults=cleaned)
+        return Response(policy_payload(policy, persisted=True))

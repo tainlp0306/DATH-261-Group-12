@@ -97,11 +97,24 @@ export const courseApi = {
     return response.data;
   },
 
+  getCourseRiskPolicy: async (courseId) => {
+    const response = await api.get(`courses/${courseId}/analytics/policy/`);
+    return response.data;
+  },
+
+  updateCourseRiskPolicy: async (courseId, policy) => {
+    const response = await api.put(`courses/${courseId}/analytics/policy/`, policy);
+    return response.data;
+  },
   getCourseAnalytics: async (courseId) => {
     const response = await api.get(`courses/${courseId}/analytics/`);
     return response.data;
   },
 
+  getMyCourseAnalytics: async (courseId) => {
+    const response = await api.get('me/analytics/', { params: { course: courseId } });
+    return response.data;
+  },
   interveneCourseLearner: async (courseId, studentId) => {
     const response = await api.post(`courses/${courseId}/analytics/intervene/`, {
       student_id: studentId,
@@ -316,6 +329,10 @@ export const courseApi = {
 
   submitPractice: async (vocabularyId, answer) => {
     const response = await api.post(`vocabulary/${vocabularyId}/practice/`, { answer });
+    return response.data;
+  },
+  getNextPracticeItem: async (courseId) => {
+    const response = await api.get(`courses/${courseId}/practice/next/`);
     return response.data;
   },
 
