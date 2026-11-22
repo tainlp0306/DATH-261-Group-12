@@ -28,6 +28,25 @@ class Course(models.Model):
     def __str__(self):
         return self.title
 
+
+class CourseRiskPolicy(models.Model):
+    """Per-course early-warning thresholds. Missing row means the defaults."""
+
+    course = models.OneToOneField(Course, on_delete=models.CASCADE, related_name='risk_policy')
+    plan_days = models.PositiveIntegerField(default=28)
+    min_enrolled_days = models.PositiveIntegerField(default=14)
+    low_completion_ratio = models.FloatField(default=0.40)
+    inactive_days = models.PositiveIntegerField(default=7)
+    inactive_completion_below = models.FloatField(default=0.80)
+    critical_inactive_days = models.PositiveIntegerField(default=14)
+    quiz_fail_below = models.FloatField(default=5.0)
+    quiz_streak_min = models.PositiveIntegerField(default=3)
+    retention_min_attempts = models.PositiveIntegerField(default=5)
+    retention_flag_below = models.FloatField(default=40.0)
+    watch_score = models.FloatField(default=25)
+    at_risk_score = models.FloatField(default=50)
+    critical_score = models.FloatField(default=75)
+
 class Module(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='modules')
     title = models.CharField(max_length=255)
@@ -119,6 +138,40 @@ class PracticeLog(models.Model):
     vocabulary = models.ForeignKey(Vocabulary, on_delete=models.CASCADE)
     is_correct = models.BooleanField(default=False)
     attempt_date = models.DateTimeField(auto_now_add=True)
+
+
+class PracticeAttempt(models.Model):
+    """One row for vocabulary practice and short activities, including writing."""
+
+    TYPING = 'typing'
+    STROKE = 'stroke'
+    QUIZ = 'quiz'
+    VOCABULARY = 'vocabulary'
+    WRITING = 'writing'
+    KIND_CHOICES = [
+        (TYPING, 'Gõ'),
+        (STROKE, 'Vẽ nét'),
+        (QUIZ, 'Trắc nghiệm ngắn'),
+        (VOCABULARY, 'Luyện từ vựng'),
+        (WRITING, 'Luyện viết'),
+    ]
+
+    student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='practice_attempts')
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='practice_attempts')
+    vocabulary = models.ForeignKey(Vocabulary, null=True, blank=True, on_delete=models.SET_NULL)
+    activity = models.ForeignKey(
+        'LearningActivity', null=True, blank=True, on_delete=models.SET_NULL,
+    )
+    practice_log = models.OneToOneField(
+        PracticeLog, null=True, blank=True, on_delete=models.CASCADE, related_name='fact',
+    )
+    activity_attempt = models.OneToOneField(
+        'LearningActivityAttempt', null=True, blank=True, on_delete=models.CASCADE, related_name='fact',
+    )
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES)
+    is_correct = models.BooleanField(null=True, blank=True)
+    score = models.FloatField(null=True, blank=True)
+    attempted_at = models.DateTimeField(db_index=True)
 
 class Quiz(models.Model):
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='quizzes')

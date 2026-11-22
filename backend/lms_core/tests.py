@@ -1662,7 +1662,7 @@ class AdvancedComponentsApiTests(APITestCase):
 		self.assertEqual(response.data['enrolled_count'], 1)
 		row = response.data['students'][0]
 		self.assertEqual(row['risk_level'], 'at_risk')
-		self.assertIn('quiz_failures', [reason['code'] for reason in row['reasons']])
+		self.assertIn('consecutive_quiz_failures', [reason['code'] for reason in row['reasons']])
 		self.assertEqual(row['quiz_count'], 3)
 		self.assertEqual(len(response.data['weekly_progress']), 8)
 		self.assertAlmostEqual(response.data['weekly_progress'][-1]['mean_quiz_score'], 3.0)
@@ -1685,8 +1685,8 @@ class AdvancedComponentsApiTests(APITestCase):
 		self.client.force_authenticate(self.instructor)
 		response = self.client.get(reverse('course_analytics', args=[self.course.pk]))
 		row = response.data['students'][0]
-		self.assertIn('low_completion', [reason['code'] for reason in row['reasons']])
-		self.assertEqual(row['risk_level'], 'watch')
+		self.assertIn('low_completion_after_two_weeks', [reason['code'] for reason in row['reasons']])
+		self.assertEqual(row['risk_level'], 'at_risk')
 
 	def test_page_update_does_not_move_completion_time(self):
 		self.client.force_authenticate(self.learner)

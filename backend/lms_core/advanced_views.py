@@ -12,6 +12,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .analytics import analyze_course, log_learning_event
+from .services.analytics import send_progress_email
 from .models import (
     Course,
     Enrollment,
@@ -131,10 +132,12 @@ class CourseInterventionView(APIView):
             action=Intervention.NOTIFY,
             notification=notification,
         )
+        email_sent = send_progress_email(enrollment.student, course, notification.message)
         return Response({
             'deduplicated': False,
             'intervention_id': intervention.id,
             'notification_id': notification.id,
+            'email_sent': email_sent,
         }, status=status.HTTP_201_CREATED)
 
 

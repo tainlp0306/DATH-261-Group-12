@@ -27,7 +27,7 @@ from .views import (
     LearnerAccessActivityView, LearnerProfileSummaryView,
 )
 from .analytics_views import (
-    CourseAnalyticsOverviewView, CourseAtRiskView, CourseInterveneView, MyAnalyticsView,
+    CourseAnalyticsOverviewView, CourseAtRiskView, CourseInterveneView, CourseRiskPolicyView, MyAnalyticsView,
 )
 from .advanced_views import (
     CourseAnalyticsView,
@@ -105,6 +105,7 @@ urlpatterns = [
     path('assignments/<int:assignment_id>/submissions/<int:submission_id>/review/', AssignmentReviewView.as_view(), name='assignment_submission_review'),
     path('assignments/<int:assignment_id>/submissions/', AssignmentSubmissionListView.as_view(), name='assignment_submissions'),
     path('assignments/<int:assignment_id>/grading/', AssignmentGradingView.as_view(), name='assignment_grading'),
+    path('courses/<int:course_id>/analytics/policy/', CourseRiskPolicyView.as_view(), name='course_risk_policy'),
     path('courses/<int:course_id>/analytics/overview/', CourseAnalyticsOverviewView.as_view(), name='course_analytics_overview'),
     path('courses/<int:course_id>/analytics/at-risk/', CourseAtRiskView.as_view(), name='course_analytics_at_risk'),
     path('courses/<int:course_id>/analytics/practice-intervene/', CourseInterveneView.as_view(), name='course_analytics_intervene'),

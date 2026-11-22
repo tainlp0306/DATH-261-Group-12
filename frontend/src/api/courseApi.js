@@ -97,6 +97,16 @@ export const courseApi = {
     return response.data;
   },
 
+  getCourseRiskPolicy: async (courseId) => {
+    const response = await api.get(`courses/${courseId}/analytics/policy/`);
+    return response.data;
+  },
+
+  updateCourseRiskPolicy: async (courseId, policy) => {
+    const response = await api.put(`courses/${courseId}/analytics/policy/`, policy);
+    return response.data;
+  },
+
   getCourseAnalytics: async (courseId) => {
     const response = await api.get(`courses/${courseId}/analytics/`);
     return response.data;

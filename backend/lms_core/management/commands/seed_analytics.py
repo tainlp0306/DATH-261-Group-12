@@ -259,4 +259,5 @@ class Command(BaseCommand):
 
     def _practice(self, student, vocabulary, correct, when):
         practice = PracticeLog.objects.create(student=student, vocabulary=vocabulary, is_correct=correct)
-        PracticeLog.objects.filter(pk=practice.pk).update(attempt_date=when)
+        practice.attempt_date = when
+        practice.save(update_fields=['attempt_date'])
