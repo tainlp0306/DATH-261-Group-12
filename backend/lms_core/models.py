@@ -255,7 +255,6 @@ class LessonPage(models.Model):
     class Meta:
         ordering = ['page_number', 'id']
 
-
 class SystemLog(models.Model):
     user = models.ForeignKey(User, on_delete=models.SET_NULL, null=True)
     action = models.CharField(max_length=255)
@@ -418,7 +417,6 @@ class Intervention(models.Model):
         (NOTIFY, 'Nhắc học viên'),
         (SUGGEST_REVIEW, 'Gợi ý ôn lại'),
     ]
-
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='interventions')
     student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='interventions_received')
     actor = models.ForeignKey(

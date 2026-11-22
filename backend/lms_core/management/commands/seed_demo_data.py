@@ -231,8 +231,7 @@ class Command(BaseCommand):
         question_texts = [item[0] for item in question_data]
         quiz.questions.exclude(content__in=question_texts).delete()
         for index, (content, option_a, option_b, option_c, option_d, correct_option) in enumerate(question_data):
-            question, _created = Question.objects.update_or_create(
-                assignment=quiz,
+            question, _created = Question.objects.update_or_create(                assignment=quiz,
                 content=content,
                 defaults={
                     'option_a': option_a,

@@ -117,8 +117,7 @@ const CourseDetailPage = () => {
           {isLearner && !isEnrolled && (
             <button type="button" onClick={enroll} className="bg-emerald-800 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-900">Đăng ký khóa học</button>
           )}
-        </div>
-      </div>
+        </div>      </div>
 
       <header className="py-6">
         <p className="text-xs font-bold uppercase tracking-wider text-emerald-800">Đề cương khóa học</p>
@@ -136,7 +135,6 @@ const CourseDetailPage = () => {
       </header>
 
       {isEnrolled && <LearnerRiskBanner courseId={course.id} />}
-
       <section className="border-y border-slate-300" aria-label="Chương, bài học và bài tập">
         {modules.length === 0 ? <p className="py-8 text-sm text-slate-500">Khóa học chưa có chương học.</p> : modules.map((module, index) => {
           const lessons = [...(module.lessons || [])].sort((left, right) => left.order - right.order);

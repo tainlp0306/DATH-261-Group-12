@@ -683,7 +683,8 @@ class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
         if user.role == 'admin':
             return queryset
         if self.request.method in ('PUT', 'PATCH', 'DELETE'):
-            return queryset.filter(instructor=user)
+            visible_courses = Q(is_published=True) | Q(instructor=user)
+            return queryset.filter(visible_courses).distinct()
         visible_courses = Q(is_published=True) | Q(enrollments__student=user)
         if user.role == 'instructor':
             visible_courses |= Q(instructor=user)
@@ -722,11 +723,6 @@ class CourseDetailView(generics.RetrieveUpdateDestroyAPIView):
                 message=f'Khóa học "{updated.title}" vừa được cập nhật.',
                 target_url=f'/courses/{updated.id}',
             )
-
-    def perform_update(self, serializer):
-        if not user_manages_course(self.request.user, serializer.instance):
-            raise PermissionDenied('Bạn không có quyền chỉnh sửa khóa học này.')
-        serializer.save()
 
     def perform_destroy(self, instance):
         if not user_manages_course(self.request.user, instance):
@@ -772,12 +768,6 @@ class ModuleCreateView(generics.CreateAPIView):
                 target_url=f'/courses/{course.id}',
             )
 
-    def perform_create(self, serializer):
-        course = serializer.validated_data['course']
-        if not user_manages_course(self.request.user, course):
-            raise PermissionDenied('Bạn không có quyền thêm chương vào khóa học này.')
-        serializer.save()
-
 class LessonCreaterView(generics.CreateAPIView):
     queryset = Lesson.objects.all()
     serializer_class = LessonSerializer
@@ -802,12 +792,6 @@ class LessonCreaterView(generics.CreateAPIView):
                 target_url=f'/courses/{module.course_id}/lessons/{lesson.id}',
             )
 
-    def perform_create(self, serializer):
-        module = serializer.validated_data['module']
-        if not user_manages_course(self.request.user, module.course):
-            raise PermissionDenied('Bạn không có quyền thêm bài học vào khóa học này.')
-        serializer.save()
-
 class EnrollmentListCreateView(generics.ListCreateAPIView):
     serializer_class = EnrollmentSerializer
     permission_classes = [IsAuthenticated]
@@ -830,7 +814,6 @@ class EnrollmentListCreateView(generics.ListCreateAPIView):
                 {"error": "Khóa học chưa được xuất bản."},
                 status=status.HTTP_403_FORBIDDEN,
             )
-
         if Enrollment.objects.filter(student=request.user, course=course).exists():
             return Response({"message": "Bạn đã đăng ký khóa học này rồi"}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -1027,16 +1010,6 @@ class ModuleDetailView(generics.RetrieveUpdateDestroyAPIView):
             )
         instance.delete()
 
-    def perform_update(self, serializer):
-        if not user_manages_course(self.request.user, serializer.instance.course):
-            raise PermissionDenied('Bạn không có quyền sửa chương này.')
-        serializer.save()
-
-    def perform_destroy(self, instance):
-        if not user_manages_course(self.request.user, instance.course):
-            raise PermissionDenied('Bạn không có quyền xóa chương này.')
-        instance.delete()
-
 class LessonDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Lesson.objects.select_related('module__course')
     serializer_class = LessonSerializer
@@ -1104,16 +1077,6 @@ class LessonDetailView(generics.RetrieveUpdateDestroyAPIView):
                 message=f'Bài học "{instance.title}" đã được gỡ khỏi khóa học.',
                 target_url=f'/courses/{course.id}',
             )
-        instance.delete()
-
-    def perform_update(self, serializer):
-        if not user_manages_course(self.request.user, serializer.instance.module.course):
-            raise PermissionDenied('Bạn không có quyền sửa bài học này.')
-        serializer.save()
-
-    def perform_destroy(self, instance):
-        if not user_manages_course(self.request.user, instance.module.course):
-            raise PermissionDenied('Bạn không có quyền xóa bài học này.')
         instance.delete()
 
 

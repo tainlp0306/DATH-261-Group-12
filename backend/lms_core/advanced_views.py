@@ -54,8 +54,7 @@ class CourseAnalyticsView(APIView):
         levels = {'critical': 3, 'at_risk': 2, 'watch': 1, 'ok': 0}
         report['rows'].sort(
             key=lambda row: (
-                -levels.get(row['risk_level'], 0),
-                -row['pace_gap'],
+                -levels.get(row['risk_level'], 0),                -row['pace_gap'],
                 row['username'],
             )
         )

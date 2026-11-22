@@ -6,8 +6,7 @@ import { courseApi } from '../api/courseApi';
 
 const emptyQuestion = () => ({
   content: '', option_a: '', option_b: '', option_c: '', option_d: '',
-  correct_option: 'A', explanation: '', add_to_review: false,
-});
+  correct_option: 'A', explanation: '', add_to_review: false,});
 
 const vnLocalDateTime = (date) => {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -352,8 +351,7 @@ const InstructorAssignments = ({ courseId, modules = [] }) => {
                 <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
                   <input type="checkbox" checked={Boolean(question.add_to_review)} onChange={(event) => updateQuestion(index, 'add_to_review', event.target.checked)} />
                   Đưa vào ôn tập
-                </label>
-                <label className="block text-xs font-semibold">Giải thích đáp án (không bắt buộc)
+                </label>                <label className="block text-xs font-semibold">Giải thích đáp án (không bắt buộc)
                   <textarea value={question.explanation || ''} onChange={(event) => updateQuestion(index, 'explanation', event.target.value)} rows={2} className="mt-1 block w-full border border-slate-300 px-3 py-2 text-sm" />
                 </label>
               </fieldset>

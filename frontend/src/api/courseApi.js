@@ -106,7 +106,6 @@ export const courseApi = {
     const response = await api.put(`courses/${courseId}/analytics/policy/`, policy);
     return response.data;
   },
-
   getCourseAnalytics: async (courseId) => {
     const response = await api.get(`courses/${courseId}/analytics/`);
     return response.data;
@@ -116,7 +115,6 @@ export const courseApi = {
     const response = await api.get('me/analytics/', { params: { course: courseId } });
     return response.data;
   },
-
   interveneCourseLearner: async (courseId, studentId) => {
     const response = await api.post(`courses/${courseId}/analytics/intervene/`, {
       student_id: studentId,

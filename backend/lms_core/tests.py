@@ -24,8 +24,7 @@ from .models import (
 	AdminLog, Assignment, Comment, Course, EmailOTP, Enrollment, Intervention, LearnerAccessSession, LearningActivity,
 	LearningActivityAttempt, LearningActivityItem, LearningEvent, Lesson, LessonProgress,
 	LoginEvent, Module, Notification, PracticeLog, PracticeSchedule, Question, Report, Submission, Test, TestSubmission,
-	Vocabulary,
-)
+	Vocabulary,)
 
 User = get_user_model()
 
@@ -346,7 +345,6 @@ class InstructorDraftCourseTests(APITestCase):
 		)
 		self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 		self.assertFalse(Module.objects.filter(course=self.draft).exists())
-
 
 class CourseOwnershipRegressionTests(APITestCase):
 	def setUp(self):
@@ -1695,7 +1693,6 @@ class PracticeApiTests(APITestCase):
 		self.assertEqual(queued.get().word, 'A1')
 		self.assertEqual(queued.get().kind, 'choice')
 
-
 class AdvancedComponentsApiTests(APITestCase):
 	def setUp(self):
 		self.instructor = User.objects.create_user(
@@ -1810,7 +1807,6 @@ class AdvancedComponentsApiTests(APITestCase):
 		progress.refresh_from_db()
 		self.assertEqual(progress.completed_at, original)
 		self.assertEqual(progress.last_page, 2)
-
 	def test_instructor_intervention_notifies_at_risk_student_once_per_24_hours(self):
 		Enrollment.objects.filter(pk=self.enrollment.pk).update(
 			enrolled_at=timezone.now() - timedelta(days=18),

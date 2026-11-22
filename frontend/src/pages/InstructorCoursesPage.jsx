@@ -32,8 +32,7 @@ const InstructorCoursesPage = () => {
     try {
       setLoading(true);
       const data = await courseApi.getInstructorCourses();
-      setCourses(Array.isArray(data) ? data : data?.results || []);
-    } catch (err) {
+      setCourses(Array.isArray(data) ? data : data?.results || []);    } catch (err) {
       console.error('Failed to load courses:', err);
       showToast('Không thể tải danh sách khóa học.', 'error');
     } finally {

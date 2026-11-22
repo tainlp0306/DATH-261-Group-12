@@ -208,5 +208,4 @@ Tab, banner, overview và at-risk cùng đọc `lms_core.services.analytics`. `l
 | Lịch sử trước khi có sự kiện | Tuần cũ không có `lesson_completed` phải dựa vào `completed_at`. Bản ghi hoàn thành trước migration được điền từ `updated_at`, nên tuần đó vẫn là ước lượng. | Không tính lại lịch sử từ `updated_at` sau khi đã có `completed_at`. Sự kiện mới là nhật ký. |
 | Email nhắc không có hàng đợi | Cùng khóa chống trùng 24 giờ với thông báo trong chuông. Gửi thất bại chỉ ghi log, không thử lại. | Hàng đợi gửi và thử lại, vẫn dùng đúng câu lý do trên bảng. |
 | Không phải đánh giá năng lực | Cohort gắn nhãn là dữ liệu mô phỏng. Quy tắc chưa được kiểm trên lớp thật. | Giữ câu trên giao diện: đây là tín hiệu hỗ trợ giảng viên. Chỉ báo precision/recall cho đúng bộ phân loại đang chạy trên màn hình đó. |
-
 Tài khoản admin duy nhất có `is_active=False` trong DB local (`demo_admin`) đã được kích hoạt lại; không thay đổi mật khẩu.

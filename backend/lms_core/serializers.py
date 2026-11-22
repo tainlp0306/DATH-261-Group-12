@@ -335,8 +335,7 @@ class AssignmentQuestionSerializer(serializers.ModelSerializer):
         model = Question
         fields = [
             'id', 'content', 'option_a', 'option_b', 'option_c', 'option_d',
-            'correct_option', 'explanation', 'attachment', 'add_to_review',
-        ]
+            'correct_option', 'explanation', 'attachment', 'add_to_review',        ]
         read_only_fields = ['id']
         extra_kwargs = {
             'correct_option': {'write_only': True},
@@ -456,7 +455,6 @@ class AssignmentSerializer(serializers.ModelSerializer):
                 removed.delete()
             for question in instance.questions.all():
                 sync_review_item(question)
-
             current_questions = list(Question.objects.filter(assignment=instance))
             if current_questions:
                 for submission in instance.submissions.all():

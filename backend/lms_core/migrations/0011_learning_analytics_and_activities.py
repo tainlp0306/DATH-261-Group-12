@@ -13,7 +13,6 @@ class CreateModelIfMissing(migrations.CreateModel):
             return
         super().database_forwards(app_label, schema_editor, from_state, to_state)
 
-
 class Migration(migrations.Migration):
 
     dependencies = [
@@ -21,8 +20,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        CreateModelIfMissing(
-            name='Intervention',
+        CreateModelIfMissing(            name='Intervention',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('action', models.CharField(choices=[('notify', 'Nhắc học viên')], max_length=32)),
@@ -75,8 +73,7 @@ class Migration(migrations.Migration):
                 'ordering': ['order', 'id'],
             },
         ),
-        CreateModelIfMissing(
-            name='LearningEvent',
+        CreateModelIfMissing(            name='LearningEvent',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('event_type', models.CharField(choices=[('lesson_completed', 'Hoàn thành bài học'), ('quiz_submitted', 'Nộp bài trắc nghiệm'), ('file_submitted', 'Nộp bài tệp'), ('activity_submitted', 'Hoàn thành bài luyện tập ngắn'), ('enrolled', 'Ghi danh khóa học')], max_length=32)),
