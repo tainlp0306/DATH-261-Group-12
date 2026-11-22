@@ -22,7 +22,7 @@ from .views import (
     RegistrationOTPRequestView, RegistrationOTPConfirmView,
     SubmitAssignmentView, CourseAssignmentListCreateView, AssignmentSubmissionListView,
     AssignmentGradingView, AssignmentDetailView, AssignmentQuestionAttachmentView,
-    CourseVocabularyListCreateView, PracticeAttemptView,
+    CourseVocabularyListCreateView, PracticeAttemptView, NextPracticeItemView,
     AssignmentAttemptStartView, AssignmentAttemptAnswersView, AssignmentReviewView,
     LearnerAccessActivityView, LearnerProfileSummaryView,
 )
@@ -111,6 +111,7 @@ urlpatterns = [
     path('courses/<int:course_id>/analytics/practice-intervene/', CourseInterveneView.as_view(), name='course_analytics_intervene'),
     path('me/analytics/', MyAnalyticsView.as_view(), name='my_analytics'),
     path('courses/<int:course_id>/vocabulary/', CourseVocabularyListCreateView.as_view(), name='course_vocabulary'),
+    path('courses/<int:course_id>/practice/next/', NextPracticeItemView.as_view(), name='practice_next'),
     path('vocabulary/<int:vocabulary_id>/practice/', PracticeAttemptView.as_view(), name='practice_attempt'),
     path('courses/<int:course_id>/analytics/', CourseAnalyticsView.as_view(), name='course_analytics'),
     path('courses/<int:course_id>/analytics/intervene/', CourseInterventionView.as_view(), name='course_intervention'),

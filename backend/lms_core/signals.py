@@ -9,7 +9,11 @@ QUIZ_CORRECT_AT = 5.0
 @receiver(post_save, sender=PracticeLog)
 def sync_vocabulary_practice(sender, instance, **kwargs):
     vocabulary = instance.vocabulary
-    kind = vocabulary.kind if vocabulary.kind in (PracticeAttempt.TYPING, PracticeAttempt.STROKE) else PracticeAttempt.TYPING
+    practice_kinds = (
+        PracticeAttempt.TYPING, PracticeAttempt.STROKE,
+        PracticeAttempt.THEORY, PracticeAttempt.CHOICE,
+    )
+    kind = vocabulary.kind if vocabulary.kind in practice_kinds else PracticeAttempt.TYPING
     PracticeAttempt.objects.update_or_create(
         practice_log=instance,
         defaults={

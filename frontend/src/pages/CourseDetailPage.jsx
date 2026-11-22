@@ -112,7 +112,7 @@ const CourseDetailPage = () => {
         <Link to="/courses" className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-emerald-800"><ArrowLeft className="h-4 w-4" /> Tất cả khóa học</Link>
         <div className="flex flex-wrap gap-2">
           {isEnrolled && (
-            <Link to={`/courses/${course.id}/practice`} data-testid="open-practice" className="bg-indigo-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-800">Luyện gõ và viết</Link>
+            <Link to={`/courses/${course.id}/practice`} data-testid="open-practice" className="bg-indigo-700 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-800">Luyện tập</Link>
           )}
           {isLearner && !isEnrolled && (
             <button type="button" onClick={enroll} className="bg-emerald-800 px-4 py-2.5 text-sm font-semibold text-white hover:bg-emerald-900">Đăng ký khóa học</button>

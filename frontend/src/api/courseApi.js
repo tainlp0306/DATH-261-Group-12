@@ -333,6 +333,10 @@ export const courseApi = {
     const response = await api.post(`vocabulary/${vocabularyId}/practice/`, { answer });
     return response.data;
   },
+  getNextPracticeItem: async (courseId) => {
+    const response = await api.get(`courses/${courseId}/practice/next/`);
+    return response.data;
+  },
 
   // POST /quizzes/:quiz_id/submit/ - Submit quiz answers
   submitQuiz: async (quizId, answers) => {

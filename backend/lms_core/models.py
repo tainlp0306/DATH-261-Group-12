@@ -119,19 +119,31 @@ class Report(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 class Vocabulary(models.Model):
+    """One practice item. The teacher picks the form; scheduling is not a choice."""
+
     TYPING = 'typing'
     STROKE = 'stroke'
+    THEORY = 'theory'
+    CHOICE = 'choice'
     KIND_CHOICES = [
         (TYPING, 'Gõ'),
         (STROKE, 'Vẽ nét'),
+        (THEORY, 'Lý thuyết'),
+        (CHOICE, 'Trắc nghiệm'),
     ]
 
     course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name='vocabularies')
     word = models.CharField(max_length=255)
     meaning = models.CharField(max_length=255, blank=True)
     romaji = models.CharField(max_length=255, blank=True)
+    prompt = models.TextField(blank=True)
+    options = models.JSONField(default=list, blank=True)
     kind = models.CharField(max_length=16, choices=KIND_CHOICES, default=TYPING)
     stroke_data = models.JSONField(blank=True, null=True)
+    in_queue = models.BooleanField(default=True)
+    source_question = models.OneToOneField(
+        'Question', null=True, blank=True, on_delete=models.CASCADE, related_name='review_item',
+    )
 
 class PracticeLog(models.Model):
     student = models.ForeignKey(User, on_delete=models.CASCADE)
@@ -140,17 +152,36 @@ class PracticeLog(models.Model):
     attempt_date = models.DateTimeField(auto_now_add=True)
 
 
+class PracticeSchedule(models.Model):
+    """Per learner, per item. The teacher never edits these fields."""
+
+    student = models.ForeignKey(User, on_delete=models.CASCADE, related_name='practice_schedules')
+    vocabulary = models.ForeignKey(Vocabulary, on_delete=models.CASCADE, related_name='schedules')
+    due_at = models.DateTimeField()
+    interval_days = models.PositiveIntegerField(default=0)
+    last_incorrect_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['student', 'vocabulary'], name='unique_practice_schedule'),
+        ]
+
+
 class PracticeAttempt(models.Model):
     """One row for vocabulary practice and short activities, including writing."""
 
     TYPING = 'typing'
     STROKE = 'stroke'
+    THEORY = 'theory'
+    CHOICE = 'choice'
     QUIZ = 'quiz'
     VOCABULARY = 'vocabulary'
     WRITING = 'writing'
     KIND_CHOICES = [
         (TYPING, 'Gõ'),
         (STROKE, 'Vẽ nét'),
+        (THEORY, 'Lý thuyết'),
+        (CHOICE, 'Trắc nghiệm'),
         (QUIZ, 'Trắc nghiệm ngắn'),
         (VOCABULARY, 'Luyện từ vựng'),
         (WRITING, 'Luyện viết'),
@@ -284,6 +315,7 @@ class Question(models.Model):
     option_d = models.CharField(max_length=255)
     correct_option = models.CharField(max_length=1)
     explanation = models.TextField(blank=True)
+    add_to_review = models.BooleanField(default=False)
     attachment = models.FileField(upload_to='assignments/questions/', blank=True, null=True)
 
 class Submission(models.Model):

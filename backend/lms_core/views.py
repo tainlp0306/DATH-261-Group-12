@@ -57,6 +57,7 @@ from .models import (
     Assignment, Submission, Vocabulary, PracticeLog, LearnerAccessSession,
 )
 from .services.analytics import log_learning_event
+from .services.practice import choose_next_item, grade_practice_answer, record_schedule
 from .email_backends import EmailDeliveryError
 
 User = get_user_model()
@@ -2072,13 +2073,18 @@ class CourseVocabularyListCreateView(generics.ListCreateAPIView):
     def get_course(self):
         return get_object_or_404(Course, pk=self.kwargs['course_id'])
 
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['hide_answers'] = not user_manages_course(self.request.user, self.get_course())
+        return context
+
     def get_queryset(self):
         course = self.get_course()
         user = self.request.user
         enrolled = Enrollment.objects.filter(student=user, course=course).exists()
         if not enrolled and not user_manages_course(user, course):
             raise PermissionDenied('Bạn cần ghi danh hoặc phụ trách khóa học để luyện tập.')
-        return Vocabulary.objects.filter(course=course).order_by('id')
+        return Vocabulary.objects.filter(course=course, in_queue=True).order_by('id')
 
     def perform_create(self, serializer):
         course = self.get_course()
@@ -2100,16 +2106,20 @@ class PracticeAttemptView(APIView):
         if not enrolled and not user_manages_course(request.user, course):
             raise PermissionDenied('Bạn cần ghi danh để nộp bài luyện tập.')
 
+        if not vocabulary.in_queue:
+            return Response({'detail': 'Mục này không nằm trong hàng đợi ôn tập.'}, status=status.HTTP_404_NOT_FOUND)
+
         answer = request.data.get('answer', '')
         if not str(answer).strip():
             return Response({'answer': ['Nhập câu trả lời.']}, status=status.HTTP_400_BAD_REQUEST)
 
-        is_correct = practice_answer_matches(vocabulary, answer)
+        is_correct = grade_practice_answer(vocabulary, answer)
         practice = PracticeLog.objects.create(
             student=request.user,
             vocabulary=vocabulary,
             is_correct=is_correct,
         )
+        schedule = record_schedule(request.user, vocabulary, is_correct)
         log_learning_event(
             actor=request.user,
             course=course,
@@ -2128,5 +2138,25 @@ class PracticeAttemptView(APIView):
             'id': practice.id,
             'is_correct': is_correct,
             'attempt_count': attempt_count,
+            'interval_days': schedule.interval_days,
+            'due_at': schedule.due_at,
             'message': 'Đúng.' if is_correct else 'Chưa đúng. Bạn có thể luyện lại.',
         }, status=status.HTTP_201_CREATED)
+
+
+class NextPracticeItemView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, course_id):
+        course = get_object_or_404(Course, pk=course_id)
+        enrolled = Enrollment.objects.filter(student=request.user, course=course).exists()
+        if not enrolled and not user_manages_course(request.user, course):
+            raise PermissionDenied('Bạn cần ghi danh hoặc phụ trách khóa học để luyện tập.')
+        item, reason = choose_next_item(request.user, course)
+        if item is None:
+            return Response({'item': None, 'reason': None})
+        payload = VocabularySerializer(
+            item,
+            context={'request': request, 'hide_answers': not user_manages_course(request.user, course)},
+        ).data
+        return Response({'item': payload, 'reason': reason})
